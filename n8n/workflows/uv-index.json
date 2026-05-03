@@ -1,0 +1,80 @@
+{
+  "name": "Índice UV — IPMA (2x/dia)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "10 0,12 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.ipma.pt/open-data/forecast/meteorology/uv/uv.json",
+        "options": {}
+      },
+      "id": "node-http-uv",
+      "name": "Buscar UV IPMA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// n8n HTTP node unpacks the JSON array into individual items, one per UV entry.\n// We collect all of them with $input.all() instead of $input.first().\n\nconst entries = $input.all().map(i => i.json);\n\nconsole.log(`UV entries received: ${entries.length}. Sample:`, JSON.stringify(entries[0]));\n\nconst maxUV = new Map(); // key: `${globalIdLocal}_${data}`\n\nfor (const e of entries) {\n  if (!e.globalIdLocal || !e.data) continue;\n  const uv = parseFloat(e.iUv);\n  if (isNaN(uv)) continue;\n  const key = `${e.globalIdLocal}_${e.data}`;\n  if (!maxUV.has(key) || uv > maxUV.get(key).uv) {\n    maxUV.set(key, {\n      ipma_global_id: e.globalIdLocal,\n      data: e.data,\n      uv: Math.round(uv),\n    });\n  }\n}\n\nconst rows = [...maxUV.values()];\nconsole.log(`UV: ${rows.length} station-day pairs produced`);\nif (rows.length === 0) throw new Error('No UV data — check iUv field name in uv.json');\n\nconst values = rows\n  .map(r => `(${r.ipma_global_id}, '${r.data}', ${r.uv})`)\n  .join(',\\n');\n\nconst sql = `\nUPDATE meteo_diario AS m\nSET uv_index = v.uv_index::integer\nFROM (\n  VALUES ${values}\n) AS v(ipma_global_id, data, uv_index)\nWHERE m.ipma_global_id = v.ipma_global_id::integer\n  AND m.data = v.data::date\n`;\n\nreturn [{ json: { sql, total: rows.length } }];"
+      },
+      "id": "node-code",
+      "name": "Calcular UV Máximo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres",
+      "name": "Atualizar UV",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agendamento": {
+      "main": [
+        [{ "node": "Buscar UV IPMA", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar UV IPMA": {
+      "main": [
+        [{ "node": "Calcular UV Máximo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Calcular UV Máximo": {
+      "main": [
+        [{ "node": "Atualizar UV", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "uv-index" }
+}

@@ -1,0 +1,159 @@
+{
+  "name": "Preencher Códigos Balneares — SNIAmb (único)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-manual",
+      "name": "Executar Uma Vez",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://sniambgeoogc.apambiente.pt/getogc/rest/services/SNIAmb/Praias/MapServer/0/query?where=1%3D1&outFields=codigo_agua_balnear%2Cnome_praia&returnGeometry=true&outSR=4326&f=json&resultRecordCount=2000",
+        "options": {}
+      },
+      "id": "node-http-sniamb",
+      "name": "Buscar SNIAmb",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 150]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Extract features from ArcGIS response into flat objects\nconst features = $input.first().json.features ?? [];\nreturn features\n  .filter(f => f.attributes?.codigo_agua_balnear && f.geometry)\n  .map(f => ({\n    json: {\n      codigo: f.attributes.codigo_agua_balnear,\n      lat: f.geometry.y,\n      lon: f.geometry.x\n    }\n  }));"
+      },
+      "id": "node-code-sniamb",
+      "name": "Extrair Features SNIAmb",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 150]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Collect all SNIAmb items into a single array item for the Merge node\nconst sniamb = $input.all().map(i => i.json);\nreturn [{ json: { sniamb } }];"
+      },
+      "id": "node-code-collect-sniamb",
+      "name": "Agrupar SNIAmb",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 150]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, latitude::float AS latitude, longitude::float AS longitude FROM praias WHERE latitude IS NOT NULL AND longitude IS NOT NULL ORDER BY id"
+      },
+      "id": "node-postgres-praias",
+      "name": "Buscar Praias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 450],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Collect all praia rows into a single array item\nconst praias = $input.all().map(i => i.json);\nreturn [{ json: { praias } }];"
+      },
+      "id": "node-code-collect-praias",
+      "name": "Agrupar Praias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 450]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "node-merge",
+      "name": "Juntar",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Find each dataset by key — safe regardless of Merge output order\nconst all    = $input.all();\nconst sniamb = (all.find(i => i.json.sniamb  != null)?.json.sniamb)  ?? [];\nconst praias = (all.find(i => i.json.praias  != null)?.json.praias)  ?? [];\n\nif (sniamb.length === 0) throw new Error('SNIAmb data is empty — check Buscar SNIAmb node output');\nif (praias.length === 0) throw new Error('Praias data is empty — check Buscar Praias node output');\n\nfunction haversine(lat1, lon1, lat2, lon2) {\n  const R = 6371;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a =\n    Math.sin(dLat / 2) ** 2 +\n    Math.cos(lat1 * Math.PI / 180) *\n    Math.cos(lat2 * Math.PI / 180) *\n    Math.sin(dLon / 2) ** 2;\n  return R * 2 * Math.asin(Math.sqrt(a));\n}\n\nconst THRESHOLD_KM = 1.0;\nconst pairs = []; // { praia_id, codigo }\nconst usedPraias = new Set();\n\nfor (const s of sniamb) {\n  if (!s.codigo || s.lat == null || s.lon == null) continue;\n  let closest = null, minDist = Infinity;\n  for (const p of praias) {\n    const d = haversine(s.lat, s.lon, p.latitude, p.longitude);\n    if (d < minDist) { minDist = d; closest = p; }\n  }\n  if (closest && minDist <= THRESHOLD_KM && !usedPraias.has(closest.id)) {\n    usedPraias.add(closest.id);\n    pairs.push({ praia_id: closest.id, codigo: s.codigo });\n  }\n}\n\nconsole.log(`Matched ${pairs.length} beaches out of ${sniamb.length} SNIAmb entries`);\n\nif (pairs.length === 0) throw new Error('No matches found — check coordinates or threshold');\n\n// Build a single bulk UPDATE\nconst values = pairs.map(p => `(${p.praia_id}, '${p.codigo}')`).join(',\\n');\nconst sql = `\nUPDATE praias\nSET codigo_agua_balnear = v.codigo\nFROM (VALUES ${values}) AS v(id, codigo)\nWHERE praias.id = v.id::integer\n`;\n\nreturn [{ json: { sql, matched: pairs.length } }];"
+      },
+      "id": "node-code-match",
+      "name": "Fazer Correspondência",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres-update",
+      "name": "Atualizar Praias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1320, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Executar Uma Vez": {
+      "main": [
+        [
+          { "node": "Buscar SNIAmb",   "type": "main", "index": 0 },
+          { "node": "Buscar Praias",   "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Buscar SNIAmb": {
+      "main": [
+        [{ "node": "Extrair Features SNIAmb", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extrair Features SNIAmb": {
+      "main": [
+        [{ "node": "Agrupar SNIAmb", "type": "main", "index": 0 }]
+      ]
+    },
+    "Agrupar SNIAmb": {
+      "main": [
+        [{ "node": "Juntar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Praias": {
+      "main": [
+        [{ "node": "Agrupar Praias", "type": "main", "index": 0 }]
+      ]
+    },
+    "Agrupar Praias": {
+      "main": [
+        [{ "node": "Juntar", "type": "main", "index": 1 }]
+      ]
+    },
+    "Juntar": {
+      "main": [
+        [{ "node": "Fazer Correspondência", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fazer Correspondência": {
+      "main": [
+        [{ "node": "Atualizar Praias", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "preencher-codigos-balneares" }
+}

@@ -1,0 +1,80 @@
+{
+  "name": "Qualidade da Água — EEA (Anual)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 1 10 *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://discodata.eea.europa.eu/sql?query=SELECT%20bathingWaterIdentifier%2C%20quality%20FROM%20WISE_BWD.latest.assessment_BathingWaterStatus%20WHERE%20CountryCode%3D%27PT%27%20AND%20season%3D2024&p=1&nrOfHits=1000",
+        "options": {}
+      },
+      "id": "node-http-eea",
+      "name": "Buscar Classificações EEA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Map EEA quality labels to our Portuguese DB values\nconst QUALITY = {\n  '1 - Excellent'          : 'excelente',\n  '2 - Good'               : 'boa',\n  '3 - Good or Sufficient' : 'aceitavel',\n  '4 - Poor'               : 'ma'\n};\n\nconst results = $input.first().json.results ?? [];\nconsole.log(`EEA returned ${results.length} PT records`);\nif (results.length > 0) console.log('Sample:', JSON.stringify(results[0]));\n\nconst classified = results.filter(r => QUALITY[r.quality]);\nconsole.log(`${classified.length} records with a known classification`);\n\nif (classified.length === 0) throw new Error('No classified beaches — check EEA query or field names');\n\n// Build a bulk INSERT ... JOIN ... ON CONFLICT using a VALUES table\n// Season year is extracted from the season field (integer in EEA data)\nconst values = classified\n  .map(r => `('${r.bathingWaterIdentifier}', '${QUALITY[r.quality]}', '${r.season ?? 2024}-07-01')`)\n  .join(',\\n');\n\nconst sql = `\nINSERT INTO qualidade_agua (praia_id, classificacao, data_analise, updated_at)\nSELECT p.id, v.classificacao, v.data_analise::date, NOW()\nFROM (\n  VALUES ${values}\n) AS v(bathingWaterIdentifier, classificacao, data_analise)\nJOIN praias p ON p.codigo_agua_balnear = v.bathingWaterIdentifier\nON CONFLICT (praia_id) DO UPDATE SET\n  classificacao = EXCLUDED.classificacao,\n  data_analise  = EXCLUDED.data_analise,\n  updated_at    = EXCLUDED.updated_at\n`;\n\nreturn [{ json: { sql, total: classified.length } }];"
+      },
+      "id": "node-code-transform",
+      "name": "Preparar SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres-upsert",
+      "name": "Guardar Qualidade",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agendamento": {
+      "main": [
+        [{ "node": "Buscar Classificações EEA", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Classificações EEA": {
+      "main": [
+        [{ "node": "Preparar SQL", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar SQL": {
+      "main": [
+        [{ "node": "Guardar Qualidade", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "qualidade-agua" }
+}

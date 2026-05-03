@@ -1,0 +1,158 @@
+{
+  "name": "Meteo Diário — IPMA (00h e 12h UTC)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 0,12 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.ipma.pt/open-data/distrits-islands.json",
+        "options": {}
+      },
+      "id": "node-http-locations",
+      "name": "Localizações IPMA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// The IPMA endpoint returns a JSON array wrapped in a single n8n item.\n// This node unpacks it into one item per station so the loop works correctly.\nreturn $input.first().json.data.map(s => ({ json: s }));"
+      },
+      "id": "node-code-split",
+      "name": "Separar Estações",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "node-split",
+      "name": "Por Estação",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.ipma.pt/open-data/forecast/meteorology/cities/daily/{{$json.globalIdLocal}}.json",
+        "options": {}
+      },
+      "id": "node-http-forecast",
+      "name": "Previsão da Estação",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const stationId = $input.first().json.globalIdLocal;\nconst forecasts = $input.first().json.data ?? [];\n\nconst TIPOS_TEMPO = {\n  1: 'Céu limpo',\n  2: 'Pouco nublado',\n  3: 'Parcialmente nublado',\n  4: 'Muito nublado',\n  5: 'Chuva fraca',\n  6: 'Aguaceiros fracos',\n  7: 'Chuva',\n  8: 'Chuva forte',\n  9: 'Aguaceiros',\n  10: 'Trovoada com chuva',\n  11: 'Trovoada',\n  12: 'Neve',\n  13: 'Neve com chuva',\n  14: 'Granizo',\n  15: 'Nevoeiro',\n  16: 'Nublado com chuva fraca',\n  17: 'Aguaceiros',\n  18: 'Aguaceiros fortes',\n  19: 'Nevoeiro com chuva',\n  20: 'Granizo com chuva',\n  21: 'Aguaceiros com granizo',\n  22: 'Trovoada com chuva forte',\n  23: 'Trovoada com aguaceiros',\n  24: 'Neve e chuva',\n  25: 'Aguaceiros de neve',\n  26: 'Neve forte',\n  27: 'Céu limpo (noite)',\n  28: 'Pouco nublado (noite)',\n  29: 'Parcialmente nublado (noite)'\n};\n\n// Returns one row per forecast day (up to 5 days ahead)\nreturn forecasts.map(d => ({\n  json: {\n    ipma_global_id: stationId,\n    data: d.forecastDate,\n    temp_min: d.tMin != null ? parseFloat(d.tMin) : null,\n    temp_max: d.tMax != null ? parseFloat(d.tMax) : null,\n    precipitacao: d.precipitaProb != null ? parseFloat(d.precipitaProb) : null,\n    vento_direcao: d.predWindDir ?? null,\n    vento_intensidade: d.classWindSpeed != null ? parseInt(String(d.classWindSpeed)) : null,\n    uv_index: null,\n    estado_tempo: TIPOS_TEMPO[d.idWeatherType] ?? null,\n    temp_agua: null,\n    ondulacao_altura: null,\n    updated_at: new Date().toISOString(),\n  }\n}));"
+      },
+      "id": "node-code-transform",
+      "name": "Transformar Meteo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "meteo_diario",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": ["ipma_global_id", "data"],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "node-postgres-upsert",
+      "name": "Guardar Meteo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1320, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agendamento": {
+      "main": [
+        [{ "node": "Localizações IPMA", "type": "main", "index": 0 }]
+      ]
+    },
+    "Localizações IPMA": {
+      "main": [
+        [{ "node": "Separar Estações", "type": "main", "index": 0 }]
+      ]
+    },
+    "Separar Estações": {
+      "main": [
+        [{ "node": "Por Estação", "type": "main", "index": 0 }]
+      ]
+    },
+    "Por Estação": {
+      "main": [
+        [],
+        [{ "node": "Previsão da Estação", "type": "main", "index": 0 }]
+      ]
+    },
+    "Previsão da Estação": {
+      "main": [
+        [{ "node": "Transformar Meteo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transformar Meteo": {
+      "main": [
+        [{ "node": "Guardar Meteo", "type": "main", "index": 0 }]
+      ]
+    },
+    "Guardar Meteo": {
+      "main": [
+        [{ "node": "Por Estação", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateId": "meteo-diario"
+  }
+}

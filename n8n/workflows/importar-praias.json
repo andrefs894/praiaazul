@@ -1,0 +1,94 @@
+{
+  "name": "Importar Praias — APA SNIAmb (Execução Única)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-manual-trigger",
+      "name": "Trigger Manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://sniambgeoogc.apambiente.pt/getogc/rest/services/SNIAmb/Praias/MapServer/0/query?where=1%3D1&outFields=*&returnGeometry=true&f=json&resultRecordCount=2000",
+        "options": {}
+      },
+      "id": "node-http-praias",
+      "name": "Praias SNIAmb",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Fetch IPMA stations to assign the nearest weather station to each beach.\n// The 37 stations are district capitals — stable data that rarely changes.\nconst ipmaRes = await fetch('https://api.ipma.pt/open-data/distrits-islands.json');\nconst ipmaStations = await ipmaRes.json();\n\nconst features = $input.first().json.features ?? [];\n\nfunction haversine(lat1, lon1, lat2, lon2) {\n  const R = 6371;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));\n}\n\nfunction nearestStation(lat, lon) {\n  let best = null, bestDist = Infinity;\n  for (const s of ipmaStations) {\n    const d = haversine(lat, lon, parseFloat(s.latitude), parseFloat(s.longitude));\n    if (d < bestDist) { bestDist = d; best = s; }\n  }\n  return best?.globalIdLocal ?? null;\n}\n\n// categoria_agua_balnear: 1 = costeira, 2 = fluvial, 3 = albufeira\nfunction mapTipo(cat) {\n  if (cat === 1) return 'costeira';\n  if (cat === 2) return 'fluvial';\n  if (cat === 3) return 'albufeira';\n  return null;\n}\n\nreturn features.map(f => {\n  const a = f.attributes;\n  const lat = f.geometry?.y ?? null;\n  const lng = f.geometry?.x ?? null;\n  return {\n    json: {\n      nome: a.nome_praia ?? 'Sem nome',\n      concelho: a.concelho ?? null,\n      distrito: null,\n      latitude: lat,\n      longitude: lng,\n      tipo: mapTipo(a.categoria_agua_balnear),\n      bandeira_azul: a.bandeira_azul === 1,\n      nadador_salvador: a.vigilancia === 1,\n      acessivel: a.acessivel === 1,\n      restaurante: a.apoio_balnear === 1,\n      estacionamento: a.estacionamento === 1 ? null : 'inexistente',\n      estacionamento_capacidade: null,\n      estacionamento_distancia_metros: null,\n      descricao: null,\n      ipma_global_id: (lat && lng) ? nearestStation(lat, lng) : null,\n    }\n  };\n});"
+      },
+      "id": "node-code-transform",
+      "name": "Transformar Praias",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "schema": {
+          "__rl": true,
+          "value": "public",
+          "mode": "list"
+        },
+        "table": {
+          "__rl": true,
+          "value": "praias",
+          "mode": "list"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "node-postgres-insert",
+      "name": "Inserir Praias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [660, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Trigger Manual": {
+      "main": [
+        [{ "node": "Praias SNIAmb", "type": "main", "index": 0 }]
+      ]
+    },
+    "Praias SNIAmb": {
+      "main": [
+        [{ "node": "Transformar Praias", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transformar Praias": {
+      "main": [
+        [{ "node": "Inserir Praias", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateId": "importar-praias"
+  }
+}

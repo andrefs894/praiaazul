@@ -1,0 +1,114 @@
+{
+  "name": "Mar e Temperatura — IPMA (2x/dia)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "5 0,12 * * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://api.ipma.pt/open-data/forecast/oceanography/daily/hp-daily-sea-forecast-day0.json",
+        "options": {}
+      },
+      "id": "node-http-mar",
+      "name": "Previsão do Mar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 150]
+    },
+    {
+      "parameters": {
+        "url": "https://api.ipma.pt/open-data/distrits-islands.json",
+        "options": {}
+      },
+      "id": "node-http-estacoes",
+      "name": "Estações IPMA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [220, 450]
+    },
+    {
+      "parameters": {
+        "mode": "append"
+      },
+      "id": "node-merge",
+      "name": "Juntar",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// item[0] = sea forecast   { data: [{globalIdLocal, latitude, longitude, waveHighMin, waveHighMax, sstMin, sstMax, ...}] }\n// item[1] = weather stations { data: [{globalIdLocal, latitude, longitude, local, ...}] }\n\nconst all = $input.all();\nconst seaItem      = all.find(i => i.json.data?.[0]?.waveHighMin != null);\nconst stationsItem = all.find(i => i.json.data?.[0]?.globalIdLocal != null && i.json.data?.[0]?.waveHighMin == null);\n\nif (!seaItem)      throw new Error('Sea forecast data missing — check Previsão do Mar node');\nif (!stationsItem) throw new Error('Weather stations data missing — check Estações IPMA node');\n\nconst seaStations     = seaItem.json.data      ?? [];\nconst weatherStations = stationsItem.json.data ?? [];\n\n// Log a sea station sample so you can verify field names in n8n output panel\nconsole.log('Sea station sample:', JSON.stringify(seaStations[0]));\n\nfunction haversine(lat1, lon1, lat2, lon2) {\n  const R = 6371;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a =\n    Math.sin(dLat / 2) ** 2 +\n    Math.cos(lat1 * Math.PI / 180) *\n    Math.cos(lat2 * Math.PI / 180) *\n    Math.sin(dLon / 2) ** 2;\n  return R * 2 * Math.asin(Math.sqrt(a));\n}\n\n// Safe average: returns null if either value is null/undefined/NaN\nfunction avg(a, b) {\n  if (a == null || b == null || isNaN(a) || isNaN(b)) return null;\n  return Math.round((a + b) / 2 * 10) / 10;\n}\n\n// Safe SQL value: converts null, undefined, and NaN all to SQL NULL\nfunction v(r) {\n  return (r == null || (typeof r === 'number' && isNaN(r))) ? 'NULL' : r;\n}\n\nconst rows = [];\n\nfor (const ws of weatherStations) {\n  const wsLat = parseFloat(ws.latitude);\n  const wsLon = parseFloat(ws.longitude);\n  if (isNaN(wsLat) || isNaN(wsLon)) continue;\n\n  let nearest = null, minDist = Infinity;\n  for (const ss of seaStations) {\n    const d = haversine(wsLat, wsLon, ss.latitude, ss.longitude);\n    if (d < minDist) { minDist = d; nearest = ss; }\n  }\n  if (!nearest) continue;\n\n  // All IPMA sea forecast values are strings — parseFloat before arithmetic\n  rows.push({\n    ipma_global_id  : ws.globalIdLocal,\n    temp_agua       : avg(parseFloat(nearest.sstMin), parseFloat(nearest.sstMax)),\n    ondulacao_altura: nearest.waveHighMax != null ? parseFloat(nearest.waveHighMax) : null,\n  });\n}\n\nconsole.log(`Built ${rows.length} update rows. Sample:`, JSON.stringify(rows[0]));\nif (rows.length === 0) throw new Error('No rows produced — check sea station data format');\n\nconst values = rows\n  .map(r => `(${r.ipma_global_id}, ${v(r.temp_agua)}, ${v(r.ondulacao_altura)})`)\n  .join(',\\n');\n\nconst sql = `\nUPDATE meteo_diario AS m\nSET\n  temp_agua        = v.temp_agua::decimal,\n  ondulacao_altura = v.ondulacao::decimal\nFROM (\n  VALUES ${values}\n) AS v(ipma_global_id, temp_agua, ondulacao)\nWHERE m.ipma_global_id = v.ipma_global_id::integer\n  AND m.data = CURRENT_DATE\n`;\n\nreturn [{ json: { sql, total: rows.length } }];"
+      },
+      "id": "node-code",
+      "name": "Calcular por Estação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres",
+      "name": "Atualizar Meteo",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [880, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agendamento": {
+      "main": [
+        [
+          { "node": "Previsão do Mar",  "type": "main", "index": 0 },
+          { "node": "Estações IPMA",    "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Previsão do Mar": {
+      "main": [
+        [{ "node": "Juntar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Estações IPMA": {
+      "main": [
+        [{ "node": "Juntar", "type": "main", "index": 1 }]
+      ]
+    },
+    "Juntar": {
+      "main": [
+        [{ "node": "Calcular por Estação", "type": "main", "index": 0 }]
+      ]
+    },
+    "Calcular por Estação": {
+      "main": [
+        [{ "node": "Atualizar Meteo", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "mar-e-temperatura" }
+}
