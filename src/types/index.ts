@@ -46,7 +46,7 @@ export interface QualidadeAgua {
 
 // User profile collected during onboarding
 export type TipoPerfil = 'familia' | 'tranquila' | 'surf' | 'social'
-export type DistanciaMaxima = 15 | 30 | 60 | null // minutes; null = doesn't matter
+export type DistanciaMaxima = 25 | 50 | 100 | 200 | null // km; null = doesn't matter
 
 export interface PerfilUtilizador {
   tipo: TipoPerfil | null
@@ -60,6 +60,7 @@ export interface PraiaComMeteo extends Praia {
   meteo?: MeteoDiario
   qualidade_agua?: QualidadeAgua
   distancia_minutos?: number // estimated drive time from user location
+  distancia_km?: number      // straight-line distance from user location
 }
 
 // Result from the scoring engine

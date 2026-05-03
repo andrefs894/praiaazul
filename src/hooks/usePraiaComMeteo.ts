@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Praia, MeteoDiario, QualidadeAgua, PraiaComMeteo } from '../types'
-import { dataHoje, estimarMinutos } from '../lib/utils'
+import { dataHoje, haversineKm, estimarMinutos } from '../lib/utils'
 
 export function usePraiaComMeteo(userLat: number | null, userLng: number | null) {
   const [praias, setPraias] = useState<Praia[]>([])
@@ -42,6 +42,10 @@ export function usePraiaComMeteo(userLat: number | null, userLng: number | null)
       distancia_minutos:
         userLat != null && userLng != null && p.latitude != null && p.longitude != null
           ? estimarMinutos(userLat, userLng, p.latitude, p.longitude)
+          : undefined,
+      distancia_km:
+        userLat != null && userLng != null && p.latitude != null && p.longitude != null
+          ? Math.round(haversineKm(userLat, userLng, p.latitude, p.longitude))
           : undefined,
     }))
   }, [praias, meteo, qualidades, userLat, userLng])

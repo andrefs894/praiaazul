@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useOutletContext } from 'react-router-dom'
 import Header from '../components/Header'
 import Mapa from '../components/Mapa'
@@ -8,12 +8,13 @@ import { useFavoritas } from '../hooks/useFavoritas'
 import { usePerfil } from '../hooks/usePerfil'
 import { haversineKm } from '../lib/utils'
 import type { ContextoApp } from '../App'
+import type { DistanciaMaxima } from '../types'
 
 export default function PaginaHoje() {
   const { praiaComMeteo, loading, erro, coordenadas } = useOutletContext<ContextoApp>()
-  const [radiusKm, setRadiusKm] = useState(50)
-  const { perfil } = usePerfil()
+  const { perfil, atualizar } = usePerfil()
   const { isFavorita, toggleFavorita } = useFavoritas()
+  const radiusKm = perfil.distancia_maxima ?? 50
 
   const praiasNoRaio = useMemo(() => {
     if (!coordenadas) return praiaComMeteo
@@ -48,7 +49,7 @@ export default function PaginaHoje() {
           recomendacoes={recomendacoes}
           coordenadas={coordenadas}
           radiusKm={radiusKm}
-          onRadiusChange={setRadiusKm}
+          onRadiusChange={(km) => atualizar({ distancia_maxima: km as DistanciaMaxima })}
         />
 
         {/* 3 — Other good options */}

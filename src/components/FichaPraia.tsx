@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { MapContainer, TileLayer, Marker } from 'react-leaflet'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
 import { supabase } from '../lib/supabase'
 import type { Praia, MeteoDiario, QualidadeAgua } from '../types'
-import { dataHoje, labelVento, corQualidadeAgua, iconeEstadoTempo, labelUV } from '../lib/utils'
+import { dataHoje, labelVento, iconeEstadoTempo, labelUV } from '../lib/utils'
 import { useFavoritas } from '../hooks/useFavoritas'
+
+const ICONE_PRAIA = L.divIcon({
+  className: '',
+  html: `<div style="width:14px;height:14px;background:#FF4444;border-radius:50%;border:2px solid rgba(255,68,68,0.4)"></div>`,
+  iconSize: [14, 14],
+  iconAnchor: [7, 7],
+})
 
 const C = {
   bg: '#0F1923',
@@ -107,7 +117,7 @@ export default function FichaPraia() {
   const favoritada = isFavorita(praia.id)
 
   const temServicos = praia.bandeira_azul || praia.nadador_salvador || praia.acessivel || praia.restaurante ||
-    (praia.estacionamento != null && praia.estacionamento !== 'inexistente')
+    praia.estacionamento !== 'inexistente'
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 32 }}>
@@ -187,7 +197,7 @@ export default function FichaPraia() {
               {/* Row 1: Precipitação | Vento | UV */}
               <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
                 <DataBox icon="🌧️" label="Precip." value={meteo.precipitacao != null ? `${meteo.precipitacao}%` : '—'} />
-                <DataBox icon="💨" label="Vento" value={meteo.vento_intensidade != null ? labelVento(meteo.vento_intensidade).split(' ')[0] : '—'} />
+                <DataBox icon="💨" label="Vento" value={meteo.vento_intensidade != null ? labelVento(meteo.vento_intensidade) : '—'} />
                 <DataBox icon="☀️" label="UV" value={labelUV(meteo.uv_index)} />
               </div>
 
@@ -197,7 +207,6 @@ export default function FichaPraia() {
                   icon="💧"
                   label="Qualidade água"
                   value={qualidade?.classificacao ? (QUALIDADE_LABEL[qualidade.classificacao] ?? '—') : '—'}
-                  valueColor={qualidade?.classificacao ? corQualidadeAgua(qualidade.classificacao) : undefined}
                 />
                 <DataBox icon="🌡️" label="Temp. água" value={meteo.temp_agua != null ? `${meteo.temp_agua}°C` : '—'} />
                 <DataBox icon="🌊" label="Ondulação" value={meteo.ondulacao_altura != null ? `${meteo.ondulacao_altura}m` : '—'} />
@@ -224,8 +233,9 @@ export default function FichaPraia() {
                 {praia.nadador_salvador && <Servico texto="Nadador-Salvador" icon="🏊" />}
                 {praia.acessivel && <Servico texto="Acessível" icon="♿" />}
                 {praia.restaurante && <Servico texto="Bar/Restaurante" icon="🍽️" />}
+                {praia.estacionamento == null && <Servico texto="Estacionamento" icon="🅿️" />}
                 {praia.estacionamento === 'gratuito' && <Servico texto="Estac. grátis" icon="🅿️" />}
-                {praia.estacionamento === 'pago' && <Servico texto="Estacionamento" icon="🅿️" />}
+                {praia.estacionamento === 'pago' && <Servico texto="Estac. pago" icon="🅿️" />}
               </div>
               {praia.estacionamento_capacidade != null && (
                 <p style={{ fontSize: 12, color: C.text2, margin: '10px 0 0' }}>
@@ -244,6 +254,28 @@ export default function FichaPraia() {
           <div style={{ background: C.card, borderRadius: 12, padding: 16 }}>
             <p style={labelStyle}>Descrição</p>
             <p style={{ fontSize: 13, color: C.text2, lineHeight: 1.6, margin: 0 }}>{praia.descricao}</p>
+          </div>
+        )}
+
+        {/* Mini-map */}
+        {praia.latitude != null && praia.longitude != null && (
+          <div style={{ borderRadius: 12, overflow: 'hidden', height: 180 }}>
+            <MapContainer
+              center={[praia.latitude, praia.longitude]}
+              zoom={13}
+              zoomControl={false}
+              attributionControl={false}
+              dragging={false}
+              scrollWheelZoom={false}
+              doubleClickZoom={false}
+              style={{ height: '100%', width: '100%' }}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics'
+                url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+              />
+              <Marker position={[praia.latitude, praia.longitude]} icon={ICONE_PRAIA} />
+            </MapContainer>
           </div>
         )}
 

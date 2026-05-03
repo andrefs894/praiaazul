@@ -1,4 +1,5 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker, Popup, Circle, useMap } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -11,14 +12,14 @@ function criarIconePraia(destaque: boolean) {
   if (destaque) {
     return L.divIcon({
       className: '',
-      html: `<div class="marker-pulse" style="width:16px;height:16px;background:#3DD9C4;border-radius:50%;border:2px solid rgba(61,217,196,0.3)"></div>`,
+      html: `<div class="marker-pulse" style="width:16px;height:16px;background:#FF8C00;border-radius:50%;border:2px solid rgba(255,140,0,0.3)"></div>`,
       iconSize: [16, 16],
       iconAnchor: [8, 8],
     })
   }
   return L.divIcon({
     className: '',
-    html: `<div style="width:8px;height:8px;background:#1A6FB5;border-radius:50%;border:1.5px solid rgba(26,111,181,0.5)"></div>`,
+    html: `<div style="width:8px;height:8px;background:#CC2222;border-radius:50%;border:1.5px solid rgba(204,34,34,0.5)"></div>`,
     iconSize: [8, 8],
     iconAnchor: [4, 4],
   })
@@ -58,6 +59,7 @@ interface MapaProps {
 
 export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onRadiusChange }: MapaProps) {
   const topId = recomendacoes[0]?.praia.id
+  const fecharPopup = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const praiasVisiveis = praias.filter(p => {
     if (p.latitude == null || p.longitude == null) return false
@@ -76,8 +78,8 @@ export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onR
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          attribution='&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics'
+          url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         />
 
         <VistaAdaptavel coordenadas={coordenadas} radiusKm={radiusKm} />
@@ -87,8 +89,8 @@ export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onR
             center={[coordenadas.lat, coordenadas.lng]}
             radius={radiusKm * 1000}
             pathOptions={{
-              color: '#1A6FB5',
-              fillColor: '#1A6FB5',
+              color: '#FF4444',
+              fillColor: '#FF4444',
               fillOpacity: 0.06,
               weight: 1,
               dashArray: '5, 4',
@@ -102,13 +104,41 @@ export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onR
             position={[p.latitude!, p.longitude!]}
             icon={criarIconePraia(p.id === topId)}
             zIndexOffset={p.id === topId ? 1000 : 0}
+            eventHandlers={{
+              mouseover: (e) => {
+                if (fecharPopup.current) clearTimeout(fecharPopup.current)
+                e.target.openPopup()
+              },
+              mouseout: (e) => {
+                fecharPopup.current = setTimeout(() => (e.target as L.Marker).closePopup(), 300)
+              },
+              popupopen: (e) => {
+                const el = (e as unknown as L.PopupEvent).popup.getElement()
+                if (!el || el.dataset.hoverReady) return
+                el.dataset.hoverReady = 'true'
+                const marker = e.target as L.Marker
+                el.addEventListener('mouseenter', () => {
+                  if (fecharPopup.current) clearTimeout(fecharPopup.current)
+                })
+                el.addEventListener('mouseleave', () => {
+                  fecharPopup.current = setTimeout(() => marker.closePopup(), 300)
+                })
+              },
+            }}
           >
-            <Popup>
-              <strong>{p.nome}</strong>
-              {p.concelho && <><br />{p.concelho}</>}
-              {p.meteo?.temp_max != null && (
-                <><br />{iconeEstadoTempo(p.meteo.estado_tempo, p.meteo.precipitacao)} {p.meteo.temp_max}°C</>
-              )}
+            <Popup closeButton={false} autoPan={false}>
+              <Link
+                to={`/praia/${p.id}`}
+                style={{ textDecoration: 'none', color: 'inherit', display: 'block', minWidth: 120 }}
+              >
+                <strong style={{ display: 'block', marginBottom: 2 }}>{p.nome}</strong>
+                {p.concelho && <span style={{ fontSize: 11, color: '#666' }}>{p.concelho}</span>}
+                {p.meteo?.temp_max != null && (
+                  <span style={{ display: 'block', fontSize: 11, color: '#444', marginTop: 2 }}>
+                    {iconeEstadoTempo(p.meteo.estado_tempo, p.meteo.precipitacao)} {p.meteo.temp_max}°C
+                  </span>
+                )}
+              </Link>
             </Popup>
           </Marker>
         ))}
@@ -133,7 +163,7 @@ export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onR
         padding: 2,
         gap: 2,
       }}>
-        {([10, 50, 100] as const).map(km => (
+        {([25, 50, 100, 200] as const).map(km => (
           <button
             key={km}
             onClick={() => onRadiusChange(km)}

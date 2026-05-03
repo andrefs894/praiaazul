@@ -56,12 +56,12 @@ function scorarMultidao(_praia: PraiaComMeteo): number {
 }
 
 // Score distance: shorter = better (when user has a max preference)
-function scorarDistancia(minutos: number | undefined, maxMinutos: number | null): number {
-  if (minutos == null) return 50
-  if (maxMinutos != null && minutos > maxMinutos) return 0
-  if (minutos <= 15) return 100
-  if (minutos <= 30) return 85
-  if (minutos <= 60) return 60
+function scorarDistancia(km: number | undefined, maxKm: number | null): number {
+  if (km == null) return 50
+  if (maxKm != null && km > maxKm) return 0
+  if (km <= 25)  return 100
+  if (km <= 50)  return 85
+  if (km <= 100) return 60
   return 30
 }
 
@@ -98,7 +98,7 @@ export function calcularScore(praia: PraiaComMeteo, perfil: PerfilUtilizador): n
     temperatura: scorarTemperatura(praia.meteo?.temp_max),
     vento:       scorarVento(praia.meteo?.vento_intensidade, perfil.tipo),
     multidao:    scorarMultidao(praia),
-    distancia:   scorarDistancia(praia.distancia_minutos, perfil.distancia_maxima),
+    distancia:   scorarDistancia(praia.distancia_km, perfil.distancia_maxima),
     perfil:      scorarPerfil(praia, perfil.tipo),
   }
 

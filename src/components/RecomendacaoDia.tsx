@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { labelVento, iconeEstadoTempo, corQualidadeAgua, labelQualidadeAgua, labelUV } from '../lib/utils'
+import { labelVento, iconeEstadoTempo, labelQualidadeAgua, labelUV } from '../lib/utils'
 import type { RecomendacaoResult } from '../types'
 
 function DataBox({ icon, value, label }: { icon: string; value: string; label: string }) {
@@ -57,7 +57,7 @@ function CartaoPrincipal({
   const { praia, motivo } = rec
   const m = praia.meteo
 
-  const temParking = praia.estacionamento != null && praia.estacionamento !== 'inexistente'
+  const temParking = praia.estacionamento !== 'inexistente'
 
   return (
     <div style={{ background: '#1A6FB5', borderRadius: 16, padding: '18px 18px 16px' }}>
@@ -109,7 +109,7 @@ function CartaoPrincipal({
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
         <DataBox
           icon="💨"
-          value={m?.vento_intensidade != null ? labelVento(m.vento_intensidade).split(' ')[0] : '—'}
+          value={m?.vento_intensidade != null ? labelVento(m.vento_intensidade) : '—'}
           label="vento"
         />
         <div style={{
@@ -123,7 +123,7 @@ function CartaoPrincipal({
           gap: 4,
         }}>
           <span style={{ fontSize: 20 }}>💧</span>
-          <span style={{ fontSize: 14, fontWeight: 500, color: corQualidadeAgua(praia.qualidade_agua?.classificacao) }}>
+          <span style={{ fontSize: 14, fontWeight: 500, color: 'white' }}>
             {labelQualidadeAgua(praia.qualidade_agua?.classificacao)}
           </span>
           <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>qualidade</span>
@@ -140,7 +140,7 @@ function CartaoPrincipal({
         {praia.bandeira_azul && <Badge texto="Bandeira Azul" />}
         {praia.nadador_salvador && <Badge texto="Nadador-Salvador" />}
         {praia.acessivel && <Badge texto="Acessível" />}
-        {temParking && <Badge texto={praia.estacionamento === 'gratuito' ? 'Estac. grátis' : 'Estacionamento'} />}
+        {temParking && <Badge texto={praia.estacionamento === 'gratuito' ? 'Estac. grátis' : praia.estacionamento === 'pago' ? 'Estac. pago' : 'Estacionamento'} />}
         {praia.restaurante && <Badge texto="Restaurante" />}
       </div>
 

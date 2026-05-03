@@ -57,23 +57,23 @@ export function corQualidadeAgua(classificacao: string | null | undefined): stri
   }
 }
 
-// Short display label for water quality (fits in a small DataBox)
+// Display label for water quality
 export function labelQualidadeAgua(classificacao: string | null | undefined): string {
   switch (classificacao) {
-    case 'excelente': return 'Excl.'
+    case 'excelente': return 'Excelente'
     case 'boa':       return 'Boa'
-    case 'aceitavel': return 'Aceit.'
+    case 'aceitavel': return 'Moderada'
     case 'ma':        return 'Má'
     default:          return '—'
   }
 }
 
-// Short UV index label — shows the number with a risk tier suffix
+// UV risk tier label — word only, no number
 export function labelUV(uv: number | null | undefined): string {
   if (uv == null) return '—'
-  if (uv <= 2)  return `${uv} Baixo`
-  if (uv <= 5)  return `${uv} Mod.`
-  if (uv <= 7)  return `${uv} Alto`
-  if (uv <= 10) return `${uv} M.Alto`
-  return `${uv} Extr.`
+  if (uv <= 2)  return 'Baixo'
+  if (uv <= 5)  return 'Moderado'
+  if (uv <= 7)  return 'Alto'
+  if (uv <= 10) return 'Muito Alto'
+  return 'Extremo'
 }

@@ -76,6 +76,11 @@ function CartaoPraia({ praia }: { praia: PraiaComMeteo }) {
                 🍽️ Restaurante
               </span>
             )}
+            {praia.estacionamento !== 'inexistente' && (
+              <span className="text-[10px] bg-slate-50 text-slate-600 rounded-full px-2 py-0.5">
+                🅿️ {praia.estacionamento === 'gratuito' ? 'Estac. grátis' : praia.estacionamento === 'pago' ? 'Estac. pago' : 'Estacionamento'}
+              </span>
+            )}
           </div>
         </div>
       </div>

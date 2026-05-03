@@ -21,10 +21,10 @@ const TIPOS: { valor: TipoPerfil; label: string }[] = [
 ]
 
 const DISTANCIAS: { valor: DistanciaMaxima; label: string }[] = [
-  { valor: 15, label: '15 min' },
-  { valor: 30, label: '30 min' },
-  { valor: 60, label: '1h' },
-  { valor: null, label: 'Tanto faz' },
+  { valor: 25,  label: '25 km' },
+  { valor: 50,  label: '50 km' },
+  { valor: 100, label: '100 km' },
+  { valor: 200, label: '200 km' },
 ]
 
 function ChipSeletor({
