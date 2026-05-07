@@ -8,7 +8,11 @@ import type { Praia, MeteoDiario, QualidadeAgua } from '../types'
 import { dataHoje, labelVento, iconeEstadoTempo, labelUV } from '../lib/utils'
 import { estimarOcupacao } from '../lib/ocupacao'
 import IndicadorOcupacao from './IndicadorOcupacao'
+import GaleriaFotos from './GaleriaFotos'
+import PontosInteresse from './PontosInteresse'
 import { useFavoritas } from '../hooks/useFavoritas'
+import { useFotos } from '../hooks/useFotos'
+import { usePontosInteresse } from '../hooks/usePontosInteresse'
 
 const ICONE_PRAIA = L.divIcon({
   className: '',
@@ -122,6 +126,8 @@ export default function FichaPraia() {
     praia.estacionamento !== 'inexistente'
 
   const ocupacao = estimarOcupacao(praia, meteo)
+  const { fotos } = useFotos(praia.id)
+  const { pontos } = usePontosInteresse(praia.id)
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 32 }}>
@@ -177,6 +183,9 @@ export default function FichaPraia() {
             {[praia.concelho, praia.distrito].filter(Boolean).join(', ')}
           </p>
         </div>
+
+        {/* Photo gallery */}
+        <GaleriaFotos fotos={fotos} />
 
         {/* Weather + quality — merged card */}
         <div style={{ background: C.card, borderRadius: 12, padding: 16 }}>
@@ -255,6 +264,9 @@ export default function FichaPraia() {
             <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>Sem informação de serviços.</p>
           )}
         </div>
+
+        {/* Nearby places (restaurants/bars/cafes within ~500m) */}
+        <PontosInteresse pontos={pontos} />
 
         {/* Description */}
         {praia.descricao && (

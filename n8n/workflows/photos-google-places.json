@@ -1,0 +1,134 @@
+{
+  "name": "Photos — Google Places (incremental)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-manual",
+      "name": "Executar Uma Vez",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, google_place_id FROM praias WHERE google_place_id IS NOT NULL AND id NOT IN (SELECT DISTINCT praia_id FROM praia_fotos) ORDER BY id LIMIT 50"
+      },
+      "id": "node-postgres-praias",
+      "name": "Buscar Praias Sem Fotos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://places.googleapis.com/v1/places/{{ $json.google_place_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" },
+            { "name": "X-Goog-FieldMask", "value": "id,photos" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-http-place-details",
+      "name": "Detalhes do Lugar",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Expand each beach into one item per photo reference (cap 10).\nconst praia = $('Buscar Praias Sem Fotos').item.json;\nconst photos = $input.item.json.photos ?? [];\n\nif (photos.length === 0) {\n  console.log(`Praia ${praia.id}: no photos returned`);\n  return [];\n}\n\nconst out = photos.slice(0, 10).map((photo, idx) => ({\n  json: {\n    praia_id: Number(praia.id),\n    ordem: idx,\n    photoName: String(photo.name),\n    widthPx: photo.widthPx ?? null,\n    heightPx: photo.heightPx ?? null,\n    attribution: photo.authorAttributions?.[0]?.displayName ?? null,\n  }\n}));\n\nconsole.log(`Praia ${praia.id}: ${out.length} photos`);\nreturn out;"
+      },
+      "id": "node-code-expand",
+      "name": "Expandir Fotos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://places.googleapis.com/v1/{{ $json.photoName }}/media",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "maxWidthPx", "value": "1200" },
+            { "name": "skipHttpRedirect", "value": "true" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-http-photo-url",
+      "name": "Resolver URL da Foto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Pair the resolved photoUri with the metadata from the expand step.\nconst meta = $('Expandir Fotos').item.json;\nconst body = $input.item.json;\nconst photoUri = body.photoUri ?? null;\n\nif (!photoUri) {\n  console.log(`Praia ${meta.praia_id} ordem ${meta.ordem}: photoUri missing`);\n  return null;\n}\n\nreturn {\n  json: {\n    praia_id: meta.praia_id,\n    ordem: meta.ordem,\n    url: String(photoUri),\n    largura: meta.widthPx,\n    altura: meta.heightPx,\n    attribution: meta.attribution,\n  }\n};"
+      },
+      "id": "node-code-combine",
+      "name": "Combinar Metadados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Build a bulk DELETE+INSERT for praia_fotos: replace all photos for the\n// affected beaches in one transaction.\nconst rows = $input.all().map(i => i.json);\nif (rows.length === 0) {\n  console.log('No photos to insert');\n  return [];\n}\n\nconst praiaIds = [...new Set(rows.map(r => Number(r.praia_id)))];\n\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst num = (v) => v == null ? 'NULL' : String(Number(v));\n\nconst values = rows.map(r =>\n  `(${num(r.praia_id)}, ${esc(r.url)}, ${num(r.largura)}, ${num(r.altura)}, ${esc(r.attribution)}, ${num(r.ordem)}, 'google_places')`\n).join(',\\n');\n\nconst sql = `\nDELETE FROM praia_fotos WHERE praia_id IN (${praiaIds.join(',')});\nINSERT INTO praia_fotos (praia_id, url, largura, altura, attribution, ordem, fonte) VALUES ${values};\n`;\n\nconsole.log(`Will write ${rows.length} photos for ${praiaIds.length} beaches`);\nreturn [{ json: { sql, total: rows.length, praias: praiaIds.length } }];"
+      },
+      "id": "node-code-build-sql",
+      "name": "Construir SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres-update",
+      "name": "Inserir Fotos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1540, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Executar Uma Vez": { "main": [[{ "node": "Buscar Praias Sem Fotos", "type": "main", "index": 0 }]] },
+    "Buscar Praias Sem Fotos": { "main": [[{ "node": "Detalhes do Lugar", "type": "main", "index": 0 }]] },
+    "Detalhes do Lugar": { "main": [[{ "node": "Expandir Fotos", "type": "main", "index": 0 }]] },
+    "Expandir Fotos": { "main": [[{ "node": "Resolver URL da Foto", "type": "main", "index": 0 }]] },
+    "Resolver URL da Foto": { "main": [[{ "node": "Combinar Metadados", "type": "main", "index": 0 }]] },
+    "Combinar Metadados": { "main": [[{ "node": "Construir SQL", "type": "main", "index": 0 }]] },
+    "Construir SQL": { "main": [[{ "node": "Inserir Fotos", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "photos-google-places" }
+}

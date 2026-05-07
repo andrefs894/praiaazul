@@ -1,0 +1,144 @@
+{
+  "name": "Nearby Places — Restaurants/Bars/Cafes (incremental)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-manual",
+      "name": "Executar Uma Vez",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, latitude::float AS latitude, longitude::float AS longitude FROM praias WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND id NOT IN (SELECT DISTINCT praia_id FROM pontos_interesse) ORDER BY id LIMIT 50"
+      },
+      "id": "node-postgres-praias",
+      "name": "Buscar Praias Sem Pontos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://places.googleapis.com/v1/places:searchNearby",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" },
+            { "name": "X-Goog-FieldMask", "value": "places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.types,places.primaryType,places.formattedAddress,places.photos" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ includedTypes: ['restaurant','bar','cafe'], maxResultCount: 20, locationRestriction: { circle: { center: { latitude: $json.latitude, longitude: $json.longitude }, radius: 500 } }, languageCode: 'pt' }) }}",
+        "options": {}
+      },
+      "id": "node-http-nearby",
+      "name": "Pesquisa Lugares Próximos",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Rank candidates by rating × log(reviewCount + 1) and keep the top 5.\n// Expand each surviving place to its own item, carrying the original beach id\n// + Haversine distance.\nconst praia = $('Buscar Praias Sem Pontos').item.json;\nconst places = $input.item.json.places ?? [];\n\nif (places.length === 0) {\n  console.log(`Praia ${praia.id}: no nearby places`);\n  return [];\n}\n\nfunction haversineMeters(lat1, lon1, lat2, lon2) {\n  const R = 6371000;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a = Math.sin(dLat / 2) ** 2 +\n            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *\n            Math.sin(dLon / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\n// Pick the most specific category for our 3-way classification.\nfunction simplifyType(types, primaryType) {\n  const all = new Set([primaryType, ...(types || [])].filter(Boolean));\n  if (all.has('restaurant')) return 'restaurante';\n  if (all.has('bar'))        return 'bar';\n  if (all.has('cafe'))       return 'cafe';\n  return null;\n}\n\nconst scored = places.map(pl => {\n  const lat = pl.location?.latitude;\n  const lng = pl.location?.longitude;\n  const rating = pl.rating ?? 0;\n  const reviews = pl.userRatingCount ?? 0;\n  const score = rating * Math.log10(reviews + 1);\n  const distance = (lat != null && lng != null)\n    ? haversineMeters(praia.latitude, praia.longitude, lat, lng)\n    : null;\n  const photoName = pl.photos?.[0]?.name ?? null;\n  return {\n    place_id: pl.id,\n    nome: pl.displayName?.text ?? null,\n    tipo: simplifyType(pl.types, pl.primaryType),\n    rating: pl.rating ?? null,\n    review_count: pl.userRatingCount ?? null,\n    latitude: lat ?? null,\n    longitude: lng ?? null,\n    distancia_metros: distance != null ? Math.round(distance) : null,\n    endereco: pl.formattedAddress ?? null,\n    photoName,\n    score,\n  };\n});\n\n// Drop places without a name or matching tipo.\nconst valid = scored.filter(s => s.nome && s.tipo);\nvalid.sort((a, b) => b.score - a.score);\nconst top = valid.slice(0, 5);\n\nconsole.log(`Praia ${praia.id}: kept ${top.length} of ${places.length} candidates`);\n\nreturn top.map(t => ({\n  json: {\n    praia_id: Number(praia.id),\n    google_place_id: t.place_id,\n    nome: t.nome,\n    tipo: t.tipo,\n    rating: t.rating,\n    review_count: t.review_count,\n    latitude: t.latitude,\n    longitude: t.longitude,\n    distancia_metros: t.distancia_metros,\n    endereco: t.endereco,\n    photoName: t.photoName,\n  }\n}));"
+      },
+      "id": "node-code-rank",
+      "name": "Ordenar e Limitar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://places.googleapis.com/v1/{{ $json.photoName }}/media",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "maxWidthPx", "value": "800" },
+            { "name": "skipHttpRedirect", "value": "true" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "node-http-photo",
+      "name": "Resolver URL da Foto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Merge resolved photo URL into the previous code node's metadata.\n// If the photo call failed (no photoName, or 4xx with neverError), we still\n// emit the row without a photo — the UI falls back to an emoji placeholder.\nconst meta = $('Ordenar e Limitar').item.json;\nconst body = $input.item.json ?? {};\nconst photoUri = body.photoUri ?? null;\n\nreturn {\n  json: {\n    praia_id: meta.praia_id,\n    google_place_id: meta.google_place_id,\n    nome: meta.nome,\n    tipo: meta.tipo,\n    rating: meta.rating,\n    review_count: meta.review_count,\n    foto_url: photoUri,\n    foto_attr: null,\n    latitude: meta.latitude,\n    longitude: meta.longitude,\n    distancia_metros: meta.distancia_metros,\n    endereco: meta.endereco,\n  }\n};"
+      },
+      "id": "node-code-combine",
+      "name": "Combinar Metadados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Build bulk DELETE+INSERT for pontos_interesse.\nconst rows = $input.all().map(i => i.json);\nif (rows.length === 0) {\n  console.log('No nearby places to insert');\n  return [];\n}\n\nconst praiaIds = [...new Set(rows.map(r => Number(r.praia_id)))];\n\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst num = (v) => v == null ? 'NULL' : String(Number(v));\n\nconst values = rows.map(r =>\n  `(${num(r.praia_id)}, ${esc(r.google_place_id)}, ${esc(r.nome)}, ${esc(r.tipo)}, ${num(r.rating)}, ${num(r.review_count)}, ${esc(r.foto_url)}, ${esc(r.foto_attr)}, ${num(r.latitude)}, ${num(r.longitude)}, ${num(r.distancia_metros)}, ${esc(r.endereco)})`\n).join(',\\n');\n\nconst sql = `\nDELETE FROM pontos_interesse WHERE praia_id IN (${praiaIds.join(',')});\nINSERT INTO pontos_interesse (praia_id, google_place_id, nome, tipo, rating, review_count, foto_url, foto_attr, latitude, longitude, distancia_metros, endereco) VALUES ${values}\nON CONFLICT (praia_id, google_place_id) DO NOTHING;\n`;\n\nconsole.log(`Will write ${rows.length} places for ${praiaIds.length} beaches`);\nreturn [{ json: { sql, total: rows.length, praias: praiaIds.length } }];"
+      },
+      "id": "node-code-build-sql",
+      "name": "Construir SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres-update",
+      "name": "Inserir Pontos",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1540, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Executar Uma Vez": { "main": [[{ "node": "Buscar Praias Sem Pontos", "type": "main", "index": 0 }]] },
+    "Buscar Praias Sem Pontos": { "main": [[{ "node": "Pesquisa Lugares Próximos", "type": "main", "index": 0 }]] },
+    "Pesquisa Lugares Próximos": { "main": [[{ "node": "Ordenar e Limitar", "type": "main", "index": 0 }]] },
+    "Ordenar e Limitar": { "main": [[{ "node": "Resolver URL da Foto", "type": "main", "index": 0 }]] },
+    "Resolver URL da Foto": { "main": [[{ "node": "Combinar Metadados", "type": "main", "index": 0 }]] },
+    "Combinar Metadados": { "main": [[{ "node": "Construir SQL", "type": "main", "index": 0 }]] },
+    "Construir SQL": { "main": [[{ "node": "Inserir Pontos", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "nearby-places" }
+}

@@ -68,6 +68,37 @@ export interface PraiaComMeteo extends Praia {
   ocupacao_fonte?: 'estimativa' | 'tempo_real' | null
 }
 
+// Beach photo, sourced from Google Places Photos API.
+// Attribution must be displayed alongside the photo per Google ToS.
+export interface Foto {
+  id: number
+  praia_id: number
+  url: string
+  largura: number | null
+  altura: number | null
+  attribution: string | null  // e.g. "Photo by John Doe"
+  ordem: number               // 0 = primary
+  fonte: string | null        // 'google_places' | 'wikimedia' | ...
+}
+
+// Nearby restaurant / bar / cafe within ~500m of a beach.
+// Refreshed monthly via n8n; ranked by rating × log(review_count).
+export interface PontoInteresse {
+  id: number
+  praia_id: number
+  google_place_id: string
+  nome: string
+  tipo: 'restaurante' | 'bar' | 'cafe' | string | null
+  rating: number | null
+  review_count: number | null
+  foto_url: string | null
+  foto_attr: string | null
+  latitude: number | null
+  longitude: number | null
+  distancia_metros: number | null
+  endereco: string | null
+}
+
 // Result from the scoring engine
 export interface RecomendacaoResult {
   praia: PraiaComMeteo
