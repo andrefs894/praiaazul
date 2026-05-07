@@ -1,6 +1,10 @@
 import { Link } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 
 export default function Header() {
+  const { user } = useAuth()
+  const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
+
   return (
     <div style={{ maxWidth: 420, margin: '0 auto', width: '100%' }}>
       <header style={{
@@ -17,11 +21,20 @@ export default function Header() {
             A melhor praia para ti, hoje
           </p>
         </div>
-        <Link to="/perfil" style={{ display: 'flex' }}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A8A9E" strokeWidth="1.8" strokeLinecap="round">
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
+        <Link to="/perfil" style={{ display: 'flex' }} aria-label="Perfil">
+          {avatarUrl ? (
+            <img
+              src={avatarUrl}
+              alt=""
+              referrerPolicy="no-referrer"
+              style={{ width: 28, height: 28, borderRadius: '50%', display: 'block', objectFit: 'cover' }}
+            />
+          ) : (
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7A8A9E" strokeWidth="1.8" strokeLinecap="round">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+          )}
         </Link>
       </header>
     </div>
