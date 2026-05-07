@@ -49,10 +49,12 @@ function scorarVento(intensidade: number | null | undefined, perfil: TipoPerfil 
   return 10
 }
 
-// Score crowd level — placeholder until we have real occupancy data
-// For now we use a neutral 50 across the board
-function scorarMultidao(_praia: PraiaComMeteo): number {
-  return 50
+// Score crowd level from Google Popular Times busyness index (0–100).
+// Lower busyness = higher score (less crowd is better for most profiles).
+// Falls back to neutral 50 when no data is available.
+function scorarMultidao(praia: PraiaComMeteo): number {
+  if (praia.ocupacao_atual == null) return 50
+  return 100 - praia.ocupacao_atual
 }
 
 // Score distance: shorter = better (when user has a max preference)

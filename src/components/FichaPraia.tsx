@@ -6,6 +6,8 @@ import 'leaflet/dist/leaflet.css'
 import { supabase } from '../lib/supabase'
 import type { Praia, MeteoDiario, QualidadeAgua } from '../types'
 import { dataHoje, labelVento, iconeEstadoTempo, labelUV } from '../lib/utils'
+import { estimarOcupacao } from '../lib/ocupacao'
+import IndicadorOcupacao from './IndicadorOcupacao'
 import { useFavoritas } from '../hooks/useFavoritas'
 
 const ICONE_PRAIA = L.divIcon({
@@ -119,6 +121,8 @@ export default function FichaPraia() {
   const temServicos = praia.bandeira_azul || praia.nadador_salvador || praia.acessivel || praia.restaurante ||
     praia.estacionamento !== 'inexistente'
 
+  const ocupacao = estimarOcupacao(praia, meteo)
+
   return (
     <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 32 }}>
       {/* Header */}
@@ -222,6 +226,9 @@ export default function FichaPraia() {
             <p style={{ color: C.text2, fontSize: 13, margin: 0 }}>Sem dados meteorológicos para hoje.</p>
           )}
         </div>
+
+        {/* Occupation */}
+        <IndicadorOcupacao nivel={ocupacao.nivel} fonte={ocupacao.fonte} variant="card" />
 
         {/* Services */}
         <div style={{ background: C.card, borderRadius: 12, padding: 16 }}>

@@ -2,20 +2,30 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Praia, MeteoDiario, QualidadeAgua, PraiaComMeteo } from '../types'
 import { dataHoje, haversineKm, estimarMinutos } from '../lib/utils'
+import { estimarOcupacao } from '../lib/ocupacao'
+
+function horaAtual() { return new Date().getHours() }
+function diaSemanaAtual() { return new Date().getDay() } // 0=Sunday … 6=Saturday
 
 export function usePraiaComMeteo(userLat: number | null, userLng: number | null) {
   const [praias, setPraias] = useState<Praia[]>([])
   const [meteo, setMeteo] = useState<MeteoDiario[]>([])
   const [qualidades, setQualidades] = useState<QualidadeAgua[]>([])
+  const [ocupacoes, setOcupacoes] = useState<{ praia_id: number; nivel_ocupacao: number }[]>([])
   const [loading, setLoading] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
 
   useEffect(() => {
     async function carregar() {
-      const [praiasRes, meteoRes, qualRes] = await Promise.all([
+      const [praiasRes, meteoRes, qualRes, ocupacaoRes] = await Promise.all([
         supabase.from('praias').select('*'),
         supabase.from('meteo_diario').select('*').eq('data', dataHoje()),
         supabase.from('qualidade_agua').select('*'),
+        supabase
+          .from('ocupacao_horaria')
+          .select('praia_id, nivel_ocupacao')
+          .eq('dia_semana', diaSemanaAtual())
+          .eq('hora', horaAtual()),
       ])
 
       if (praiasRes.error) { setErro(praiasRes.error.message); setLoading(false); return }
@@ -24,31 +34,42 @@ export function usePraiaComMeteo(userLat: number | null, userLng: number | null)
       setPraias(praiasRes.data ?? [])
       setMeteo(meteoRes.data ?? [])
       setQualidades(qualRes.data ?? [])
+      setOcupacoes(ocupacaoRes.data ?? [])
       setLoading(false)
     }
 
     carregar()
   }, [])
 
-  // Join beaches with today's weather, water quality, and distance from user location.
+  // Join beaches with today's weather, water quality, crowd level, and distance from user location.
   const praiaComMeteo = useMemo((): PraiaComMeteo[] => {
     const meteoMap     = new Map(meteo.map(m => [m.ipma_global_id, m]))
     const qualidadeMap = new Map(qualidades.map(q => [q.praia_id, q]))
+    const ocupacaoMap  = new Map(ocupacoes.map(o => [o.praia_id, o.nivel_ocupacao]))
 
-    return praias.map(p => ({
-      ...p,
-      meteo:          p.ipma_global_id != null ? meteoMap.get(p.ipma_global_id) : undefined,
-      qualidade_agua: qualidadeMap.get(p.id),
-      distancia_minutos:
-        userLat != null && userLng != null && p.latitude != null && p.longitude != null
-          ? estimarMinutos(userLat, userLng, p.latitude, p.longitude)
-          : undefined,
-      distancia_km:
-        userLat != null && userLng != null && p.latitude != null && p.longitude != null
-          ? Math.round(haversineKm(userLat, userLng, p.latitude, p.longitude))
-          : undefined,
-    }))
-  }, [praias, meteo, qualidades, userLat, userLng])
+    return praias.map(p => {
+      const meteoP = p.ipma_global_id != null ? meteoMap.get(p.ipma_global_id) : undefined
+      // Prefer real DB data (ocupacao_horaria override) when present; fall back to heuristic estimator.
+      const real = ocupacaoMap.get(p.id)
+      const ocupacao_atual = real ?? estimarOcupacao(p, meteoP).nivel
+      const ocupacao_fonte: 'tempo_real' | 'estimativa' = real != null ? 'tempo_real' : 'estimativa'
+      return {
+        ...p,
+        meteo:          meteoP,
+        qualidade_agua: qualidadeMap.get(p.id),
+        ocupacao_atual,
+        ocupacao_fonte,
+        distancia_minutos:
+          userLat != null && userLng != null && p.latitude != null && p.longitude != null
+            ? estimarMinutos(userLat, userLng, p.latitude, p.longitude)
+            : undefined,
+        distancia_km:
+          userLat != null && userLng != null && p.latitude != null && p.longitude != null
+            ? Math.round(haversineKm(userLat, userLng, p.latitude, p.longitude))
+            : undefined,
+      }
+    })
+  }, [praias, meteo, qualidades, ocupacoes, userLat, userLng])
 
   return { praiaComMeteo, loading, erro }
 }

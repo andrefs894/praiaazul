@@ -17,6 +17,9 @@ export interface Praia {
   estacionamento_distancia_metros: number | null
   descricao: string | null
   ipma_global_id: number | null  // nearest IPMA weather station, assigned on import
+  google_place_id: string | null
+  google_rating: number | null         // 1.0–5.0
+  google_review_count: number | null
   created_at: string
 }
 
@@ -61,6 +64,8 @@ export interface PraiaComMeteo extends Praia {
   qualidade_agua?: QualidadeAgua
   distancia_minutos?: number // estimated drive time from user location
   distancia_km?: number      // straight-line distance from user location
+  ocupacao_atual?: number | null // 0–100 busyness; null = no data
+  ocupacao_fonte?: 'estimativa' | 'tempo_real' | null
 }
 
 // Result from the scoring engine

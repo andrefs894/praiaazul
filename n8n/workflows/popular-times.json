@@ -1,0 +1,125 @@
+{
+  "name": "Ocupação Popular Times — SerpAPI (mensal)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "node-schedule",
+      "name": "Agendamento",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, google_place_id FROM praias WHERE google_place_id IS NOT NULL ORDER BY id"
+      },
+      "id": "node-postgres-praias",
+      "name": "Buscar Praias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://serpapi.com/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "engine", "value": "google_maps" },
+            { "name": "place_id", "value": "={{ $json.google_place_id }}" },
+            { "name": "type", "value": "place" },
+            { "name": "api_key", "value": "={{ $env.SERPAPI_KEY }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "node-http-serpapi",
+      "name": "Buscar Popular Times",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Transform all SerpAPI responses into ocupacao_horaria rows.\n// Each input item = one beach's SerpAPI response; output = many rows total.\n// Pairs each response back to its praia_id by index.\n\nconst responses = $input.all();\nconst praias = $('Buscar Praias').all();\n\n// Sunday=0 … Saturday=6 — matches JavaScript's Date.getDay() used in the frontend.\nconst DIA = { Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6 };\n\nconst rows = [];\nfor (let i = 0; i < responses.length; i++) {\n  const praia_id = praias[i].json.id;\n  const rawPT = responses[i].json.popular_times;\n  const popularTimes = Array.isArray(rawPT) ? rawPT : [];\n\n  if (popularTimes.length === 0) {\n    console.log(`No popular_times data for praia_id=${praia_id} — skipping`);\n    continue;\n  }\n\n  let count = 0;\n  for (const day of popularTimes) {\n    const dia_semana = DIA[day.day];\n    if (dia_semana == null) continue;\n\n    for (const slot of (day.popular_times_by_day ?? [])) {\n      if (slot.hour == null || slot.busyness_score == null) continue;\n      rows.push({\n        json: {\n          praia_id,\n          dia_semana,\n          hora: slot.hour,\n          nivel_ocupacao: slot.busyness_score,\n        }\n      });\n      count++;\n    }\n  }\n  console.log(`praia_id=${praia_id}: ${count} hour slots extracted`);\n}\n\nconsole.log(`Total rows: ${rows.length}`);\nreturn rows;"
+      },
+      "id": "node-code-transform",
+      "name": "Transformar Ocupação",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Build batched INSERT ... ON CONFLICT SQL statements (1000 rows per batch).\n// Large datasets are split to avoid hitting SQL string size limits.\n\nconst rows = $input.all().map(i => i.json);\nconsole.log(`Total occupation rows to upsert: ${rows.length}`);\n\nif (rows.length === 0) return [];\n\nconst BATCH = 1000;\nconst sqls = [];\n\nfor (let i = 0; i < rows.length; i += BATCH) {\n  const batch = rows.slice(i, i + BATCH);\n  const values = batch\n    .map(r => `(${r.praia_id}, ${r.dia_semana}, ${r.hora}, ${r.nivel_ocupacao}, 'serpapi_popular_times', NOW())`)\n    .join(',\\n');\n\n  sqls.push(\n    `INSERT INTO ocupacao_horaria (praia_id, dia_semana, hora, nivel_ocupacao, fonte, updated_at)\\nVALUES ${values}\\nON CONFLICT (praia_id, dia_semana, hora)\\nDO UPDATE SET nivel_ocupacao = EXCLUDED.nivel_ocupacao, fonte = EXCLUDED.fonte, updated_at = EXCLUDED.updated_at`\n  );\n}\n\nconsole.log(`${sqls.length} SQL batch(es) ready`);\nreturn sqls.map(sql => ({ json: { sql } }));"
+      },
+      "id": "node-code-sql",
+      "name": "Preparar SQL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres-upsert",
+      "name": "Guardar Ocupação",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Agendamento": {
+      "main": [
+        [{ "node": "Buscar Praias", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Praias": {
+      "main": [
+        [{ "node": "Buscar Popular Times", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Popular Times": {
+      "main": [
+        [{ "node": "Transformar Ocupação", "type": "main", "index": 0 }]
+      ]
+    },
+    "Transformar Ocupação": {
+      "main": [
+        [{ "node": "Preparar SQL", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar SQL": {
+      "main": [
+        [{ "node": "Guardar Ocupação", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "popular-times" }
+}

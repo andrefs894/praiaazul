@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { labelVento, iconeEstadoTempo, labelQualidadeAgua, labelUV } from '../lib/utils'
+import IndicadorOcupacao from './IndicadorOcupacao'
 import type { RecomendacaoResult } from '../types'
 
 function DataBox({ icon, value, label }: { icon: string; value: string; label: string }) {
@@ -133,6 +134,11 @@ function CartaoPrincipal({
           value={labelUV(m?.uv_index)}
           label="UV"
         />
+      </div>
+
+      {/* Occupation indicator */}
+      <div style={{ marginBottom: 14 }}>
+        <IndicadorOcupacao nivel={praia.ocupacao_atual} fonte={praia.ocupacao_fonte} />
       </div>
 
       {/* Service badges */}

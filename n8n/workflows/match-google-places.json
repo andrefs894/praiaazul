@@ -1,0 +1,136 @@
+{
+  "name": "Match Praias — Google Place IDs (único)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "node-manual",
+      "name": "Executar Uma Vez",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, nome, concelho, latitude::float AS latitude, longitude::float AS longitude FROM praias WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND (google_place_id IS NULL OR google_rating IS NULL) ORDER BY id LIMIT 50"
+      },
+      "id": "node-postgres-praias",
+      "name": "Buscar Praias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Flatten beach data into primitives for the HTTP node\nconst p = $input.item.json;\nreturn {\n  json: {\n    praia_id: Number(p.id),\n    praia_nome: String(p.nome),\n    praia_latitude: Number(p.latitude),\n    praia_longitude: Number(p.longitude),\n    textQuery: `${p.nome} ${p.concelho ?? ''} Portugal`\n  }\n};"
+      },
+      "id": "node-code-prep",
+      "name": "Preparar Requisição",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://places.googleapis.com/v1/places:searchText",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" },
+            { "name": "X-Goog-FieldMask", "value": "places.id,places.displayName,places.location,places.rating,places.userRatingCount" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ JSON.stringify({ textQuery: $json.textQuery, maxResultCount: 1 }) }}",
+        "options": {}
+      },
+      "id": "node-http-places",
+      "name": "Pesquisa Google Places",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "language": "javaScript",
+        "jsCode": "// Get beach data from the prep node, API response from current input\nconst prep = $('Preparar Requisição').item.json;\nconst places = $input.item.json.places ?? [];\n\nif (places.length === 0) {\n  console.log(`${prep.praia_nome}: no results from API`);\n  return null;\n}\n\nconst place = places[0];\nconst lat2 = place.location?.latitude;\nconst lon2 = place.location?.longitude;\n\nif (!lat2 || !lon2) {\n  console.log(`${prep.praia_nome}: missing coordinates in result`);\n  return null;\n}\n\nfunction haversine(lat1, lon1, lat2, lon2) {\n  const R = 6371;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a = Math.sin(dLat / 2) ** 2 +\n            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *\n            Math.sin(dLon / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\nconst dist = haversine(prep.praia_latitude, prep.praia_longitude, lat2, lon2);\nconsole.log(`${prep.praia_nome} -> ${place.displayName?.text}: ${dist.toFixed(2)} km, rating=${place.rating ?? 'n/a'}, reviews=${place.userRatingCount ?? 0}`);\n\nif (dist > 5.0) {\n  console.log(`  REJECTED (too far)`);\n  return null;\n}\n\nconsole.log(`  MATCHED`);\nreturn {\n  json: {\n    id: prep.praia_id,\n    google_place_id: String(place.id),\n    google_rating: place.rating ?? null,\n    google_review_count: place.userRatingCount ?? null,\n  }\n};"
+      },
+      "id": "node-code-validar",
+      "name": "Validar e Filtrar",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Collect all matched beaches and build a single bulk SQL UPDATE.\nconst matches = $input.all().map(i => i.json);\nconsole.log(`Building SQL UPDATE for ${matches.length} matched beaches`);\n\nif (matches.length === 0) {\n  console.log('No matches found — nothing to update');\n  return [];\n}\n\nconst sqlNullable = (v) => v == null ? 'NULL' : String(v);\n\nconst values = matches\n  .map(m => `(${m.id}, '${m.google_place_id.replace(/'/g, \"''\")}'::text, ${sqlNullable(m.google_rating)}::numeric, ${sqlNullable(m.google_review_count)}::integer)`)\n  .join(',\\n');\n\nconst sql = `\nUPDATE praias\nSET google_place_id = v.place_id,\n    google_rating = v.rating,\n    google_review_count = v.review_count\nFROM (VALUES ${values}) AS v(id, place_id, rating, review_count)\nWHERE praias.id = v.id::integer\n`;\n\nreturn [{ json: { sql, total: matches.length } }];"
+      },
+      "id": "node-code-agrupar",
+      "name": "Agrupar Correspondências",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "={{ $json.sql }}"
+      },
+      "id": "node-postgres-update",
+      "name": "Atualizar Praias",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1320, 300],
+      "credentials": {
+        "postgres": { "id": "1", "name": "Supabase Postgres" }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Executar Uma Vez": {
+      "main": [
+        [{ "node": "Buscar Praias", "type": "main", "index": 0 }]
+      ]
+    },
+    "Buscar Praias": {
+      "main": [
+        [{ "node": "Preparar Requisição", "type": "main", "index": 0 }]
+      ]
+    },
+    "Preparar Requisição": {
+      "main": [
+        [{ "node": "Pesquisa Google Places", "type": "main", "index": 0 }]
+      ]
+    },
+    "Pesquisa Google Places": {
+      "main": [
+        [{ "node": "Validar e Filtrar", "type": "main", "index": 0 }]
+      ]
+    },
+    "Validar e Filtrar": {
+      "main": [
+        [{ "node": "Agrupar Correspondências", "type": "main", "index": 0 }]
+      ]
+    },
+    "Agrupar Correspondências": {
+      "main": [
+        [{ "node": "Atualizar Praias", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateId": "match-google-places" }
+}
