@@ -4,6 +4,7 @@ import Header from '../components/Header'
 import { useFavoritas } from '../hooks/useFavoritas'
 import { iconeEstadoTempo } from '../lib/utils'
 import type { ContextoApp } from '../App'
+import type { PraiaComMeteo } from '../types'
 
 const C = {
   card: '#132A3A', accent: '#1A6FB5',

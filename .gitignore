@@ -16,6 +16,10 @@ dist-ssr
 .env
 .env.local
 
+# Stitch AI design exports — only the README is checked in
+design/*
+!design/README.md
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
