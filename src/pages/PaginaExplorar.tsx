@@ -9,11 +9,41 @@ const C = {
   text: '#E8EDF2', text2: '#7A8A9E', border: '#1A3D52',
 } as const
 
+const MAX_PRAIAS_POR_CONCELHO = 8
+const MAX_RESULTADOS_PRAIAS   = 10
+
 function labelTipo(t: string | null) {
   if (t === 'costeira') return 'Costeira'
   if (t === 'fluvial') return 'Fluvial'
   if (t === 'albufeira') return 'Albufeira'
   return ''
+}
+
+// Group beaches whose concelho substring-matches the query.
+// Returns: [{ concelho, praias }, ...] sorted by total beach count desc.
+function agruparPorConcelho(
+  praias: PraiaComMeteo[],
+  q: string,
+): { concelho: string; praias: PraiaComMeteo[] }[] {
+  const grupos = new Map<string, PraiaComMeteo[]>()
+  for (const p of praias) {
+    if (!p.concelho) continue
+    if (!p.concelho.toLowerCase().includes(q)) continue
+    const lista = grupos.get(p.concelho) ?? []
+    lista.push(p)
+    grupos.set(p.concelho, lista)
+  }
+
+  return Array.from(grupos.entries())
+    .map(([concelho, lista]) => ({
+      concelho,
+      praias: [...lista].sort((a, b) => {
+        if (a.distancia_minutos != null && b.distancia_minutos != null)
+          return a.distancia_minutos - b.distancia_minutos
+        return a.nome.localeCompare(b.nome, 'pt')
+      }),
+    }))
+    .sort((a, b) => b.praias.length - a.praias.length)
 }
 
 export default function PaginaExplorar() {
@@ -23,14 +53,20 @@ export default function PaginaExplorar() {
   const [aberto, setAberto] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
 
-  const resultados = useMemo(() => {
-    if (query.trim().length < 2) return []
+  // Build two result groups: matched concelhos (with their beaches) + beaches matched by name
+  const { gruposConcelho, praiasNome } = useMemo(() => {
+    if (query.trim().length < 2) return { gruposConcelho: [], praiasNome: [] as PraiaComMeteo[] }
     const q = query.toLowerCase()
-    return praiaComMeteo
-      .filter(p =>
-        p.nome.toLowerCase().includes(q) ||
-        (p.concelho?.toLowerCase().includes(q) ?? false),
-      )
+
+    const gruposConcelho = agruparPorConcelho(praiaComMeteo, q)
+
+    // Beaches matched by their own name. We exclude beaches already covered by a
+    // matching concelho group to avoid duplication in the dropdown.
+    const idsJaListados = new Set<number>()
+    for (const g of gruposConcelho) for (const p of g.praias) idsJaListados.add(p.id)
+
+    const praiasNome = praiaComMeteo
+      .filter(p => p.nome.toLowerCase().includes(q) && !idsJaListados.has(p.id))
       .sort((a, b) => {
         if (a.distancia_minutos != null && b.distancia_minutos != null)
           return a.distancia_minutos - b.distancia_minutos
@@ -38,8 +74,13 @@ export default function PaginaExplorar() {
         if (b.distancia_minutos != null) return 1
         return a.nome.localeCompare(b.nome, 'pt')
       })
-      .slice(0, 10)
+      .slice(0, MAX_RESULTADOS_PRAIAS)
+
+    return { gruposConcelho, praiasNome }
   }, [praiaComMeteo, query])
+
+  const semResultados =
+    gruposConcelho.length === 0 && praiasNome.length === 0
 
   useEffect(() => {
     function fechar(e: MouseEvent) {
@@ -97,34 +138,101 @@ export default function PaginaExplorar() {
           </div>
 
           {/* Dropdown */}
-          {mostrarDropdown && resultados.length > 0 && (
+          {mostrarDropdown && !semResultados && (
             <div style={{
               position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
               background: C.card, border: `0.5px solid ${C.border}`,
               borderRadius: 16, overflow: 'hidden', zIndex: 50,
+              maxHeight: '70vh', overflowY: 'auto',
             }}>
-              {resultados.map((p, i) => (
-                <button
-                  key={p.id}
-                  onMouseDown={() => selecionar(p)}
-                  style={{
-                    width: '100%', padding: '12px 16px', textAlign: 'left',
-                    background: 'none', border: 'none',
-                    borderBottom: i < resultados.length - 1 ? `0.5px solid ${C.border}` : 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <p style={{ fontSize: 14, fontWeight: 500, color: C.text, margin: 0 }}>{p.nome}</p>
-                  <p style={{ fontSize: 12, color: C.text2, margin: '2px 0 0' }}>
-                    {[p.concelho, labelTipo(p.tipo), p.distancia_minutos != null ? `~${p.distancia_minutos} min` : null]
-                      .filter(Boolean).join(' · ')}
-                  </p>
-                </button>
+              {/* County groups */}
+              {gruposConcelho.map(({ concelho, praias }) => (
+                <div key={`concelho-${concelho}`}>
+                  <div style={{
+                    padding: '10px 16px 6px',
+                    background: 'rgba(26, 111, 181, 0.08)',
+                    borderBottom: `0.5px solid ${C.border}`,
+                  }}>
+                    <p style={{
+                      fontSize: 11, fontWeight: 600, color: C.accent,
+                      letterSpacing: '1px', textTransform: 'uppercase',
+                      margin: 0,
+                    }}>
+                      📍 Concelho de {concelho} · {praias.length} {praias.length === 1 ? 'praia' : 'praias'}
+                    </p>
+                  </div>
+                  {praias.slice(0, MAX_PRAIAS_POR_CONCELHO).map((p, i, arr) => (
+                    <button
+                      key={p.id}
+                      onMouseDown={() => selecionar(p)}
+                      style={{
+                        width: '100%', padding: '12px 16px', textAlign: 'left',
+                        background: 'none', border: 'none',
+                        borderBottom: i < arr.length - 1 ? `0.5px solid ${C.border}` : 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <p style={{ fontSize: 14, fontWeight: 500, color: C.text, margin: 0 }}>{p.nome}</p>
+                      <p style={{ fontSize: 12, color: C.text2, margin: '2px 0 0' }}>
+                        {[labelTipo(p.tipo), p.distancia_minutos != null ? `~${p.distancia_minutos} min` : null]
+                          .filter(Boolean).join(' · ')}
+                      </p>
+                    </button>
+                  ))}
+                  {praias.length > MAX_PRAIAS_POR_CONCELHO && (
+                    <p style={{
+                      fontSize: 11, color: C.text2, textAlign: 'center',
+                      padding: '8px 16px', margin: 0,
+                      borderBottom: `0.5px solid ${C.border}`,
+                    }}>
+                      + {praias.length - MAX_PRAIAS_POR_CONCELHO} {praias.length - MAX_PRAIAS_POR_CONCELHO === 1 ? 'outra' : 'outras'}
+                    </p>
+                  )}
+                </div>
               ))}
+
+              {/* Beaches matched by name (only if any AND we showed at least one county group) */}
+              {praiasNome.length > 0 && (
+                <div>
+                  {gruposConcelho.length > 0 && (
+                    <div style={{
+                      padding: '10px 16px 6px',
+                      background: 'rgba(255,255,255,0.03)',
+                      borderBottom: `0.5px solid ${C.border}`,
+                    }}>
+                      <p style={{
+                        fontSize: 11, fontWeight: 600, color: C.text2,
+                        letterSpacing: '1px', textTransform: 'uppercase',
+                        margin: 0,
+                      }}>
+                        🏖️ Praias
+                      </p>
+                    </div>
+                  )}
+                  {praiasNome.map((p, i) => (
+                    <button
+                      key={p.id}
+                      onMouseDown={() => selecionar(p)}
+                      style={{
+                        width: '100%', padding: '12px 16px', textAlign: 'left',
+                        background: 'none', border: 'none',
+                        borderBottom: i < praiasNome.length - 1 ? `0.5px solid ${C.border}` : 'none',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <p style={{ fontSize: 14, fontWeight: 500, color: C.text, margin: 0 }}>{p.nome}</p>
+                      <p style={{ fontSize: 12, color: C.text2, margin: '2px 0 0' }}>
+                        {[p.concelho, labelTipo(p.tipo), p.distancia_minutos != null ? `~${p.distancia_minutos} min` : null]
+                          .filter(Boolean).join(' · ')}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
-          {mostrarDropdown && resultados.length === 0 && (
+          {mostrarDropdown && semResultados && (
             <div style={{
               position: 'absolute', top: 'calc(100% + 6px)', left: 0, right: 0,
               background: C.card, border: `0.5px solid ${C.border}`,
@@ -138,7 +246,7 @@ export default function PaginaExplorar() {
         {!query && (
           <div style={{ textAlign: 'center', paddingTop: 60 }}>
             <p style={{ fontSize: 40, margin: '0 0 14px' }}>🧭</p>
-            <p style={{ color: C.text2, fontSize: 15, margin: 0 }}>Pesquisa uma praia para ver os detalhes</p>
+            <p style={{ color: C.text2, fontSize: 15, margin: 0 }}>Pesquisa uma praia ou concelho para ver os detalhes</p>
           </div>
         )}
 
