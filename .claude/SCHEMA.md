@@ -22,6 +22,8 @@ CREATE TABLE praias (
   google_place_id TEXT,          -- populated by n8n match-google-places workflow
   google_rating NUMERIC(2,1),    -- 1.0–5.0
   google_review_count INTEGER,
+  fotos_verificadas_em TIMESTAMPTZ,    -- last time photos workflow ran for this beach (NULL = never; non-NULL even when zero photos found, so we don't re-fetch)
+  pontos_verificados_em TIMESTAMPTZ,   -- same idea for nearby-places workflow
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
