@@ -32,11 +32,13 @@ Used for three purposes. Beaches have `google_place_id` populated once, then rat
 
 | Endpoint | Used by | Cadence | Cost (approx) |
 |---|---|---|---|
-| `places:searchText` | `match-google-places.json` — find place_id by name+concelho, validate by ≤5km Haversine | once per new beach | ~$0.032 / call |
+| `places:searchText` | `match-google-places.json` — find place_id by name+concelho, validate by ≤5km Haversine + significant-token overlap with `displayName` | once per new beach | ~$0.032 / call |
 | `places/{id}` (field mask `photos`) + `places/.../photos/.../media` | `photos-google-places.json` (NEW) — fetch up to 10 photos per beach | monthly | ~$0.007 + ~$0.007/photo |
 | `places:searchNearby` (radius=500m, types restaurant/bar/cafe) + photo media | `nearby-places.json` (NEW) — top 5 places per beach | monthly | ~$0.032 + $0.007/photo |
 
 One-time setup cost: photos for ~600 beaches ≈ $4–5. Monthly nearby refresh ≈ $35.
+
+**Known limitation:** ~20 beach groups legitimately share a `google_place_id` because Google has a single listing for a long stretch of coast that we split into sub-sections (e.g. "Foo (Norte)/(Centro)/(Sul)"). These share photos and nearby places — that's correct, since they're physically the same beach. A small number of beaches stay `NULL` because they have no Google Places listing at all.
 
 ## 7. SerpAPI — Google Maps popular_times (paid, free tier has 100 calls/month)
 - **URL:** `https://serpapi.com/search` (engine `google_maps`, query `place_id:...`)

@@ -12,7 +12,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id, google_place_id FROM praias WHERE google_place_id IS NOT NULL AND id NOT IN (SELECT DISTINCT praia_id FROM praia_fotos) ORDER BY id LIMIT 50"
+        "query": "SELECT id, google_place_id FROM praias WHERE google_place_id IS NOT NULL AND id NOT IN (SELECT DISTINCT praia_id FROM praia_fotos) ORDER BY id LIMIT 100"
       },
       "id": "node-postgres-praias",
       "name": "Buscar Praias Sem Fotos",
@@ -34,7 +34,13 @@
             { "name": "X-Goog-FieldMask", "value": "id,photos" }
           ]
         },
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "node-http-place-details",
       "name": "Detalhes do Lugar",
@@ -46,7 +52,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Expand each beach into one item per photo reference (cap 10).\nconst praia = $('Buscar Praias Sem Fotos').item.json;\nconst photos = $input.item.json.photos ?? [];\n\nif (photos.length === 0) {\n  console.log(`Praia ${praia.id}: no photos returned`);\n  return [];\n}\n\nconst out = photos.slice(0, 10).map((photo, idx) => ({\n  json: {\n    praia_id: Number(praia.id),\n    ordem: idx,\n    photoName: String(photo.name),\n    widthPx: photo.widthPx ?? null,\n    heightPx: photo.heightPx ?? null,\n    attribution: photo.authorAttributions?.[0]?.displayName ?? null,\n  }\n}));\n\nconsole.log(`Praia ${praia.id}: ${out.length} photos`);\nreturn out;"
+        "jsCode": "// Expand each beach into one item per photo reference (cap 10).\nconst praia = $('Buscar Praias Sem Fotos').item.json;\nconst response = $input.item.json;\n\n// Guard against null, error, or non-object API responses\nif (!response || typeof response !== 'object') {\n  console.log(`Praia ${praia.id}: unexpected response type, skipping`);\n  return [];\n}\nif (response.error) {\n  console.log(`Praia ${praia.id}: API error — ${response.error.message ?? JSON.stringify(response.error)}`);\n  return [];\n}\n\nconst photos = response.photos ?? [];\n\nif (photos.length === 0) {\n  console.log(`Praia ${praia.id}: no photos returned`);\n  return [];\n}\n\nconst out = photos.slice(0, 10).map((photo, idx) => ({\n  json: {\n    praia_id: Number(praia.id),\n    ordem: idx,\n    photoName: String(photo.name),\n    widthPx: photo.widthPx ?? null,\n    heightPx: photo.heightPx ?? null,\n    attribution: photo.authorAttributions?.[0]?.displayName ?? null,\n  }\n}));\n\nconsole.log(`Praia ${praia.id}: ${out.length} photos`);\nreturn out;"
       },
       "id": "node-code-expand",
       "name": "Expandir Fotos",
@@ -83,7 +89,7 @@
       "parameters": {
         "mode": "runOnceForEachItem",
         "language": "javaScript",
-        "jsCode": "// Pair the resolved photoUri with the metadata from the expand step.\nconst meta = $('Expandir Fotos').item.json;\nconst body = $input.item.json;\nconst photoUri = body.photoUri ?? null;\n\nif (!photoUri) {\n  console.log(`Praia ${meta.praia_id} ordem ${meta.ordem}: photoUri missing`);\n  return null;\n}\n\nreturn {\n  json: {\n    praia_id: meta.praia_id,\n    ordem: meta.ordem,\n    url: String(photoUri),\n    largura: meta.widthPx,\n    altura: meta.heightPx,\n    attribution: meta.attribution,\n  }\n};"
+        "jsCode": "// Pair the resolved photoUri with the metadata from the expand step.\nconst meta = $('Expandir Fotos').item.json;\nconst body = $input.item.json;\nconst photoUri = body.photoUri ?? null;\n\nif (!photoUri) {\n  console.log(`Praia ${meta.praia_id} ordem ${meta.ordem}: photoUri missing`);\n  return [];\n}\n\nreturn {\n  json: {\n    praia_id: meta.praia_id,\n    ordem: meta.ordem,\n    url: String(photoUri),\n    largura: meta.widthPx,\n    altura: meta.heightPx,\n    attribution: meta.attribution,\n  }\n};"
       },
       "id": "node-code-combine",
       "name": "Combinar Metadados",

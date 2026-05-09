@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { MapContainer, TileLayer, Marker } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from '../lib/supabase'
@@ -14,9 +14,11 @@ import { useFavoritas } from '../hooks/useFavoritas'
 import { useFotos } from '../hooks/useFotos'
 import { usePontosInteresse } from '../hooks/usePontosInteresse'
 
+const PORTUGAL_BOUNDS: L.LatLngBoundsExpression = [[36.3, -10.0], [42.5, -5.8]]
+
 const ICONE_PRAIA = L.divIcon({
   className: '',
-  html: `<div style="width:14px;height:14px;background:#FF4444;border-radius:50%;border:2px solid rgba(255,68,68,0.4)"></div>`,
+  html: `<div style="width:14px;height:14px;background:#06B6D4;border-radius:50%;border:2px solid rgba(6,182,212,0.4)"></div>`,
   iconSize: [14, 14],
   iconAnchor: [7, 7],
 })
@@ -102,6 +104,10 @@ export default function FichaPraia() {
     carregar()
   }, [id])
 
+  // Hooks must be called unconditionally before any early returns
+  const { fotos } = useFotos(praia?.id ?? null)
+  const { pontos } = usePontosInteresse(praia?.id ?? null)
+
   if (loading) return <Skeleton />
 
   if (erro || !praia) {
@@ -126,8 +132,6 @@ export default function FichaPraia() {
     praia.estacionamento !== 'inexistente'
 
   const ocupacao = estimarOcupacao(praia, meteo)
-  const { fotos } = useFotos(praia.id)
-  const { pontos } = usePontosInteresse(praia.id)
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 32 }}>
@@ -278,22 +282,37 @@ export default function FichaPraia() {
 
         {/* Mini-map */}
         {praia.latitude != null && praia.longitude != null && (
-          <div style={{ borderRadius: 12, overflow: 'hidden', height: 180 }}>
+          <div style={{ borderRadius: 12, overflow: 'hidden', height: 240 }}>
             <MapContainer
               center={[praia.latitude, praia.longitude]}
-              zoom={13}
-              zoomControl={false}
-              attributionControl={false}
-              dragging={false}
-              scrollWheelZoom={false}
-              doubleClickZoom={false}
+              zoom={14}
+              minZoom={6}
+              maxBounds={PORTUGAL_BOUNDS}
+              maxBoundsViscosity={1.0}
               style={{ height: '100%', width: '100%' }}
             >
               <TileLayer
                 attribution='&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics'
                 url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
               />
-              <Marker position={[praia.latitude, praia.longitude]} icon={ICONE_PRAIA} />
+              <Marker
+                position={[praia.latitude, praia.longitude]}
+                icon={ICONE_PRAIA}
+                eventHandlers={{
+                  mouseover: (e) => e.target.openPopup(),
+                  mouseout: (e) => e.target.closePopup(),
+                }}
+              >
+                <Popup closeButton={false} autoPan={false}>
+                  <strong style={{ display: 'block', marginBottom: 2 }}>{praia.nome}</strong>
+                  {praia.concelho && <span style={{ fontSize: 11, color: '#666' }}>{praia.concelho}</span>}
+                  {meteo?.temp_max != null && (
+                    <span style={{ display: 'block', fontSize: 11, color: '#444', marginTop: 2 }}>
+                      {iconeEstadoTempo(meteo.estado_tempo, meteo.precipitacao)} {meteo.temp_max}°C
+                    </span>
+                  )}
+                </Popup>
+              </Marker>
             </MapContainer>
           </div>
         )}

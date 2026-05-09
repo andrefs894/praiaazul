@@ -19,7 +19,7 @@ function criarIconePraia(destaque: boolean) {
   }
   return L.divIcon({
     className: '',
-    html: `<div style="width:8px;height:8px;background:#CC2222;border-radius:50%;border:1.5px solid rgba(204,34,34,0.5)"></div>`,
+    html: `<div style="width:8px;height:8px;background:#06B6D4;border-radius:50%;border:1.5px solid rgba(6,182,212,0.5)"></div>`,
     iconSize: [8, 8],
     iconAnchor: [4, 4],
   })
@@ -89,8 +89,8 @@ export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onR
             center={[coordenadas.lat, coordenadas.lng]}
             radius={radiusKm * 1000}
             pathOptions={{
-              color: '#FF4444',
-              fillColor: '#FF4444',
+              color: '#06B6D4',
+              fillColor: '#06B6D4',
               fillOpacity: 0.06,
               weight: 1,
               dashArray: '5, 4',
