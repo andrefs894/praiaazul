@@ -1,144 +1,337 @@
-{
-  "name": "Nearby Places — Restaurants/Bars/Cafes (incremental)",
-  "nodes": [
-    {
-      "parameters": {},
-      "id": "node-manual",
-      "name": "Executar Uma Vez",
-      "type": "n8n-nodes-base.manualTrigger",
-      "typeVersion": 1,
-      "position": [0, 300]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "SELECT id, latitude::float AS latitude, longitude::float AS longitude FROM praias WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND pontos_verificados_em IS NULL ORDER BY id LIMIT 100"
-      },
-      "id": "node-postgres-praias",
-      "name": "Buscar Praias Sem Pontos",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [220, 300],
-      "credentials": {
-        "postgres": { "id": "1", "name": "Supabase Postgres" }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "https://places.googleapis.com/v1/places:searchNearby",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" },
-            { "name": "X-Goog-FieldMask", "value": "places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.types,places.primaryType,places.formattedAddress,places.photos" }
-          ]
-        },
-        "sendBody": true,
-        "contentType": "raw",
-        "rawContentType": "application/json",
-        "body": "={{ JSON.stringify({ includedTypes: ['restaurant','bar','cafe'], maxResultCount: 20, locationRestriction: { circle: { center: { latitude: $json.latitude, longitude: $json.longitude }, radius: 500 } }, languageCode: 'pt' }) }}",
-        "options": {}
-      },
-      "id": "node-http-nearby",
-      "name": "Pesquisa Lugares Próximos",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [440, 300]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "language": "javaScript",
-        "jsCode": "// Rank candidates by rating × log(reviewCount + 1) and keep the top 5.\n// Expand each surviving place to its own item, carrying the original beach id\n// + Haversine distance.\nconst praia = $('Buscar Praias Sem Pontos').item.json;\nconst places = $input.item.json.places ?? [];\n\nif (places.length === 0) {\n  console.log(`Praia ${praia.id}: no nearby places`);\n  return [];\n}\n\nfunction haversineMeters(lat1, lon1, lat2, lon2) {\n  const R = 6371000;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a = Math.sin(dLat / 2) ** 2 +\n            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *\n            Math.sin(dLon / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\n// Pick the most specific category for our 3-way classification.\nfunction simplifyType(types, primaryType) {\n  const all = new Set([primaryType, ...(types || [])].filter(Boolean));\n  if (all.has('restaurant')) return 'restaurante';\n  if (all.has('bar'))        return 'bar';\n  if (all.has('cafe'))       return 'cafe';\n  return null;\n}\n\nconst scored = places.map(pl => {\n  const lat = pl.location?.latitude;\n  const lng = pl.location?.longitude;\n  const rating = pl.rating ?? 0;\n  const reviews = pl.userRatingCount ?? 0;\n  const score = rating * Math.log10(reviews + 1);\n  const distance = (lat != null && lng != null)\n    ? haversineMeters(praia.latitude, praia.longitude, lat, lng)\n    : null;\n  const photoName = pl.photos?.[0]?.name ?? null;\n  return {\n    place_id: pl.id,\n    nome: pl.displayName?.text ?? null,\n    tipo: simplifyType(pl.types, pl.primaryType),\n    rating: pl.rating ?? null,\n    review_count: pl.userRatingCount ?? null,\n    latitude: lat ?? null,\n    longitude: lng ?? null,\n    distancia_metros: distance != null ? Math.round(distance) : null,\n    endereco: pl.formattedAddress ?? null,\n    photoName,\n    score,\n  };\n});\n\n// Drop places without a name or matching tipo.\nconst valid = scored.filter(s => s.nome && s.tipo);\nvalid.sort((a, b) => b.score - a.score);\nconst top = valid.slice(0, 5);\n\nconsole.log(`Praia ${praia.id}: kept ${top.length} of ${places.length} candidates`);\n\nreturn top.map(t => ({\n  json: {\n    praia_id: Number(praia.id),\n    google_place_id: t.place_id,\n    nome: t.nome,\n    tipo: t.tipo,\n    rating: t.rating,\n    review_count: t.review_count,\n    latitude: t.latitude,\n    longitude: t.longitude,\n    distancia_metros: t.distancia_metros,\n    endereco: t.endereco,\n    photoName: t.photoName,\n  }\n}));"
-      },
-      "id": "node-code-rank",
-      "name": "Ordenar e Limitar",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [660, 300]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "=https://places.googleapis.com/v1/{{ $json.photoName }}/media",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            { "name": "maxWidthPx", "value": "800" },
-            { "name": "skipHttpRedirect", "value": "true" }
-          ]
-        },
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" }
-          ]
-        },
-        "options": {
-          "response": {
-            "response": {
-              "neverError": true
-            }
-          }
-        }
-      },
-      "id": "node-http-photo",
-      "name": "Resolver URL da Foto",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [880, 300]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "language": "javaScript",
-        "jsCode": "// Merge resolved photo URL into the previous code node's metadata.\n// If the photo call failed (no photoName, or 4xx with neverError), we still\n// emit the row without a photo — the UI falls back to an emoji placeholder.\nconst meta = $('Ordenar e Limitar').item.json;\nconst body = $input.item.json ?? {};\nconst photoUri = body.photoUri ?? null;\n\nreturn {\n  json: {\n    praia_id: meta.praia_id,\n    google_place_id: meta.google_place_id,\n    nome: meta.nome,\n    tipo: meta.tipo,\n    rating: meta.rating,\n    review_count: meta.review_count,\n    foto_url: photoUri,\n    foto_attr: null,\n    latitude: meta.latitude,\n    longitude: meta.longitude,\n    distancia_metros: meta.distancia_metros,\n    endereco: meta.endereco,\n  }\n};"
-      },
-      "id": "node-code-combine",
-      "name": "Combinar Metadados",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1100, 300]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "language": "javaScript",
-        "jsCode": "// Build bulk SQL: replace pontos_interesse for beaches that returned any,\n// AND mark every processed beach as verified (so beaches with zero nearby\n// places don't get re-fetched on the next run).\nconst rows = $input.all().map(i => i.json);\nconst allCandidates = $('Buscar Praias Sem Pontos').all().map(i => i.json);\nconst processedIds = [...new Set(allCandidates.map(c => Number(c.id)))];\n\nif (processedIds.length === 0) {\n  console.log('No beaches to verify');\n  return [];\n}\n\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst num = (v) => v == null ? 'NULL' : String(Number(v));\n\nlet sql = '';\n\nif (rows.length > 0) {\n  const praiaIdsWithPontos = [...new Set(rows.map(r => Number(r.praia_id)))];\n  const values = rows.map(r =>\n    `(${num(r.praia_id)}, ${esc(r.google_place_id)}, ${esc(r.nome)}, ${esc(r.tipo)}, ${num(r.rating)}, ${num(r.review_count)}, ${esc(r.foto_url)}, ${esc(r.foto_attr)}, ${num(r.latitude)}, ${num(r.longitude)}, ${num(r.distancia_metros)}, ${esc(r.endereco)})`\n  ).join(',\\n');\n  sql += `DELETE FROM pontos_interesse WHERE praia_id IN (${praiaIdsWithPontos.join(',')});\\n`;\n  sql += `INSERT INTO pontos_interesse (praia_id, google_place_id, nome, tipo, rating, review_count, foto_url, foto_attr, latitude, longitude, distancia_metros, endereco) VALUES ${values}\\nON CONFLICT (praia_id, google_place_id) DO NOTHING;\\n`;\n}\n\n// Always mark processed beaches as verified, even if zero nearby places were found.\nsql += `UPDATE praias SET pontos_verificados_em = NOW() WHERE id IN (${processedIds.join(',')});\\n`;\n\nconsole.log(`Will write ${rows.length} places and mark ${processedIds.length} beaches as verified`);\nreturn [{ json: { sql, total: rows.length, praias: processedIds.length } }];"
-      },
-      "id": "node-code-build-sql",
-      "name": "Construir SQL",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1320, 300]
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "={{ $json.sql }}"
-      },
-      "id": "node-postgres-update",
-      "name": "Inserir Pontos",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 2.5,
-      "position": [1540, 300],
-      "credentials": {
-        "postgres": { "id": "1", "name": "Supabase Postgres" }
-      }
-    }
-  ],
-  "pinData": {},
-  "connections": {
-    "Executar Uma Vez": { "main": [[{ "node": "Buscar Praias Sem Pontos", "type": "main", "index": 0 }]] },
-    "Buscar Praias Sem Pontos": { "main": [[{ "node": "Pesquisa Lugares Próximos", "type": "main", "index": 0 }]] },
-    "Pesquisa Lugares Próximos": { "main": [[{ "node": "Ordenar e Limitar", "type": "main", "index": 0 }]] },
-    "Ordenar e Limitar": { "main": [[{ "node": "Resolver URL da Foto", "type": "main", "index": 0 }]] },
-    "Resolver URL da Foto": { "main": [[{ "node": "Combinar Metadados", "type": "main", "index": 0 }]] },
-    "Combinar Metadados": { "main": [[{ "node": "Construir SQL", "type": "main", "index": 0 }]] },
-    "Construir SQL": { "main": [[{ "node": "Inserir Pontos", "type": "main", "index": 0 }]] }
-  },
-  "active": false,
-  "settings": { "executionOrder": "v1" },
-  "meta": { "templateId": "nearby-places" }
+﻿{
+    "name":  "Nearby Places â€” Restaurants/Bars/Cafes (incremental)",
+    "nodes":  [
+                  {
+                      "parameters":  {
+
+                                     },
+                      "id":  "node-manual",
+                      "name":  "Executar Uma Vez",
+                      "type":  "n8n-nodes-base.manualTrigger",
+                      "typeVersion":  1,
+                      "position":  [
+                                       0,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "SELECT id, latitude::float AS latitude, longitude::float AS longitude FROM praias WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND pontos_verificados_em IS NULL ORDER BY id LIMIT 100"
+                                     },
+                      "id":  "node-postgres-praias",
+                      "name":  "Buscar Praias Sem Pontos",
+                      "type":  "n8n-nodes-base.postgres",
+                      "typeVersion":  2.5,
+                      "position":  [
+                                       220,
+                                       300
+                                   ],
+                      "credentials":  {
+                                          "postgres":  {
+                                                           "id":  "1",
+                                                           "name":  "Supabase Postgres"
+                                                       }
+                                      }
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://places.googleapis.com/v1/places:searchNearby",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "X-Goog-Api-Key",
+                                                                                         "value":  "={{ $env.GOOGLE_MAPS_API_KEY }}"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "X-Goog-FieldMask",
+                                                                                         "value":  "places.id,places.displayName,places.location,places.rating,places.userRatingCount,places.types,places.primaryType,places.formattedAddress,places.photos"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "raw",
+                                         "rawContentType":  "application/json",
+                                         "body":  "={{ JSON.stringify({ includedTypes: [\u0027restaurant\u0027,\u0027bar\u0027,\u0027cafe\u0027], maxResultCount: 20, locationRestriction: { circle: { center: { latitude: $json.latitude, longitude: $json.longitude }, radius: 500 } }, languageCode: \u0027pt\u0027 }) }}",
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "neverError":  true
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "id":  "node-http-nearby",
+                      "name":  "Pesquisa Lugares Proximos",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       440,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "combineByPosition",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "node-merge1",
+                      "name":  "Mesclar Praia e Lugares",
+                      "type":  "n8n-nodes-base.merge",
+                      "typeVersion":  3,
+                      "position":  [
+                                       660,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForAllItems",
+                                         "language":  "javaScript",
+                                         "jsCode":  "// runOnceForAllItems: process all merged beach+API items, expand into one item per top place.\n// runOnceForEachItem cannot return arrays in Code v2 â€” use this mode instead.\nfunction haversineMeters(lat1, lon1, lat2, lon2) {\n  const R = 6371000;\n  const dLat = (lat2 - lat1) * Math.PI / 180;\n  const dLon = (lon2 - lon1) * Math.PI / 180;\n  const a = Math.sin(dLat / 2) ** 2 +\n            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *\n            Math.sin(dLon / 2) ** 2;\n  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));\n}\n\nfunction simplifyType(types, primaryType) {\n  const all = new Set([primaryType, ...(types || [])].filter(Boolean));\n  if (all.has(\u0027restaurant\u0027)) return \u0027restaurante\u0027;\n  if (all.has(\u0027bar\u0027))        return \u0027bar\u0027;\n  if (all.has(\u0027cafe\u0027))       return \u0027cafe\u0027;\n  return null;\n}\n\nconst out = [];\n\nfor (const inp of $input.all()) {\n  const praia = inp.json;\n  const places = praia.places ?? [];\n\n  if (praia.error) {\n    console.log(`Praia ${praia.id}: API error â€” ${praia.error.message ?? JSON.stringify(praia.error)}`);\n    continue;\n  }\n\n  if (places.length === 0) {\n    console.log(`Praia ${praia.id}: no nearby places`);\n    continue;\n  }\n\n  const scored = places.map(pl =\u003e {\n    const lat = pl.location?.latitude;\n    const lng = pl.location?.longitude;\n    const rating = pl.rating ?? 0;\n    const reviews = pl.userRatingCount ?? 0;\n    const score = rating * Math.log10(reviews + 1);\n    const distance = (lat != null \u0026\u0026 lng != null)\n      ? haversineMeters(praia.latitude, praia.longitude, lat, lng)\n      : null;\n    const photoName = pl.photos?.[0]?.name ?? null;\n    return {\n      place_id: pl.id,\n      nome: pl.displayName?.text ?? null,\n      tipo: simplifyType(pl.types, pl.primaryType),\n      rating: pl.rating ?? null,\n      review_count: pl.userRatingCount ?? null,\n      latitude: lat ?? null,\n      longitude: lng ?? null,\n      distancia_metros: distance != null ? Math.round(distance) : null,\n      endereco: pl.formattedAddress ?? null,\n      photoName,\n      score,\n    };\n  });\n\n  // Exclude surf schools and sports facilities misclassified as bars/cafes by Google\n  const SURF_KEYWORDS = [\u0027surf\u0027, \u0027kitesurf\u0027, \u0027windsurf\u0027, \u0027wakeboard\u0027];\n  const SPORTS_TYPES = new Set([\u0027sports_school\u0027, \u0027sports_complex\u0027, \u0027sports_club\u0027, \u0027fitness_center\u0027, \u0027gym\u0027]);\n  function isDesporto(place, nome) {\n    const nm = nome?.toLowerCase() ?? \u0027\u0027;\n    const types = new Set([place.primaryType, ...(place.types || [])].filter(Boolean));\n    return SURF_KEYWORDS.some(k =\u003e nm.includes(k)) || [...SPORTS_TYPES].some(t =\u003e types.has(t));\n  }\n\n  const valid = scored.filter(s =\u003e s.nome \u0026\u0026 s.tipo \u0026\u0026 !isDesporto(places.find(pl =\u003e pl.id === s.place_id) ?? {}, s.nome));\n  valid.sort((a, b) =\u003e b.score - a.score);\n\n  // Keep up to 5 per type so filter pills have enough results for each category.\n  const byType = { restaurante: [], bar: [], cafe: [] };\n  for (const s of valid) {\n    if (s.tipo \u0026\u0026 byType[s.tipo] \u0026\u0026 byType[s.tipo].length \u003c 5) {\n      byType[s.tipo].push(s);\n    }\n  }\n  const top = [...byType.restaurante, ...byType.bar, ...byType.cafe];\n\n  console.log(`Praia ${praia.id}: kept ${top.length} of ${places.length} candidates`);\n\n  for (const t of top) {\n    out.push({\n      json: {\n        praia_id: Number(praia.id),\n        google_place_id: t.place_id,\n        nome: t.nome,\n        tipo: t.tipo,\n        rating: t.rating,\n        review_count: t.review_count,\n        latitude: t.latitude,\n        longitude: t.longitude,\n        distancia_metros: t.distancia_metros,\n        endereco: t.endereco,\n        photoName: t.photoName,\n      }\n    });\n  }\n}\n\nconsole.log(`Total place items to resolve: ${out.length}`);\nreturn out;"
+                                     },
+                      "id":  "node-code-rank",
+                      "name":  "Ordenar e Limitar",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       880,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "=https://places.googleapis.com/v1/{{ $json.photoName }}/media",
+                                         "sendQuery":  true,
+                                         "queryParameters":  {
+                                                                 "parameters":  [
+                                                                                    {
+                                                                                        "name":  "maxWidthPx",
+                                                                                        "value":  "800"
+                                                                                    },
+                                                                                    {
+                                                                                        "name":  "skipHttpRedirect",
+                                                                                        "value":  "true"
+                                                                                    }
+                                                                                ]
+                                                             },
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "X-Goog-Api-Key",
+                                                                                         "value":  "={{ $env.GOOGLE_MAPS_API_KEY }}"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "options":  {
+                                                         "response":  {
+                                                                          "response":  {
+                                                                                           "neverError":  true
+                                                                                       }
+                                                                      }
+                                                     }
+                                     },
+                      "id":  "node-http-photo",
+                      "name":  "Resolver URL da Foto",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1100,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "combineByPosition",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "id":  "node-merge2",
+                      "name":  "Mesclar Lugar e URL",
+                      "type":  "n8n-nodes-base.merge",
+                      "typeVersion":  3,
+                      "position":  [
+                                       1320,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForAllItems",
+                                         "language":  "javaScript",
+                                         "jsCode":  "// Pair each resolved photoUri with the corresponding place metadata (by position).\nconst out = [];\n\nfor (const inp of $input.all()) {\n  const item = inp.json;\n\n  out.push({\n    json: {\n      praia_id: item.praia_id,\n      google_place_id: item.google_place_id,\n      nome: item.nome,\n      tipo: item.tipo,\n      rating: item.rating,\n      review_count: item.review_count,\n      foto_url: item.photoUri ?? null,\n      foto_attr: null,\n      latitude: item.latitude,\n      longitude: item.longitude,\n      distancia_metros: item.distancia_metros,\n      endereco: item.endereco,\n    }\n  });\n}\n\nreturn out;"
+                                     },
+                      "id":  "node-code-combine",
+                      "name":  "Combinar Metadados",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1540,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "mode":  "runOnceForAllItems",
+                                         "language":  "javaScript",
+                                         "jsCode":  "// Build bulk SQL: replace pontos_interesse for beaches that returned any,\n// AND mark every processed beach as verified (so beaches with zero nearby\n// places don\u0027t get re-fetched on the next run).\nconst rows = $input.all().map(i =\u003e i.json);\nconst allCandidates = $(\u0027Buscar Praias Sem Pontos\u0027).all().map(i =\u003e i.json);\nconst processedIds = [...new Set(allCandidates.map(c =\u003e Number(c.id)))];\n\nif (processedIds.length === 0) {\n  console.log(\u0027No beaches to verify\u0027);\n  return [];\n}\n\nconst esc = (v) =\u003e v == null ? \u0027NULL\u0027 : `\u0027${String(v).replace(/\u0027/g, \"\u0027\u0027\")}\u0027`;\nconst num = (v) =\u003e v == null ? \u0027NULL\u0027 : String(Number(v));\n\nlet sql = \u0027\u0027;\n\nif (rows.length \u003e 0) {\n  const praiaIdsWithPontos = [...new Set(rows.map(r =\u003e Number(r.praia_id)))];\n  const values = rows.map(r =\u003e\n    `(${num(r.praia_id)}, ${esc(r.google_place_id)}, ${esc(r.nome)}, ${esc(r.tipo)}, ${num(r.rating)}, ${num(r.review_count)}, ${esc(r.foto_url)}, ${esc(r.foto_attr)}, ${num(r.latitude)}, ${num(r.longitude)}, ${num(r.distancia_metros)}, ${esc(r.endereco)})`\n  ).join(\u0027,\\n\u0027);\n  sql += `DELETE FROM pontos_interesse WHERE praia_id IN (${praiaIdsWithPontos.join(\u0027,\u0027)});\\n`;\n  sql += `INSERT INTO pontos_interesse (praia_id, google_place_id, nome, tipo, rating, review_count, foto_url, foto_attr, latitude, longitude, distancia_metros, endereco) VALUES ${values}\\nON CONFLICT (praia_id, google_place_id) DO NOTHING;\\n`;\n}\n\n// Always mark processed beaches as verified, even if zero nearby places were found.\nsql += `UPDATE praias SET pontos_verificados_em = NOW() WHERE id IN (${processedIds.join(\u0027,\u0027)});\\n`;\n\nconsole.log(`Will write ${rows.length} places and mark ${processedIds.length} beaches as verified`);\nreturn [{ json: { sql, total: rows.length, praias: processedIds.length } }];"
+                                     },
+                      "id":  "node-code-build-sql",
+                      "name":  "Construir SQL",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1760,
+                                       300
+                                   ]
+                  },
+                  {
+                      "parameters":  {
+                                         "operation":  "executeQuery",
+                                         "query":  "={{ $json.sql }}"
+                                     },
+                      "id":  "node-postgres-update",
+                      "name":  "Inserir Pontos",
+                      "type":  "n8n-nodes-base.postgres",
+                      "typeVersion":  2.5,
+                      "position":  [
+                                       1980,
+                                       300
+                                   ],
+                      "credentials":  {
+                                          "postgres":  {
+                                                           "id":  "1",
+                                                           "name":  "Supabase Postgres"
+                                                       }
+                                      }
+                  }
+              ],
+    "pinData":  {
+
+                },
+    "connections":  {
+                        "Executar Uma Vez":  {
+                                                 "main":  [
+                                                              [
+                                                                  {
+                                                                      "node":  "Buscar Praias Sem Pontos",
+                                                                      "type":  "main",
+                                                                      "index":  0
+                                                                  }
+                                                              ]
+                                                          ]
+                                             },
+                        "Buscar Praias Sem Pontos":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "Pesquisa Lugares Proximos",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          },
+                                                                          {
+                                                                              "node":  "Mesclar Praia e Lugares",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                        "Pesquisa Lugares Proximos":  {
+                                                          "main":  [
+                                                                       [
+                                                                           {
+                                                                               "node":  "Mesclar Praia e Lugares",
+                                                                               "type":  "main",
+                                                                               "index":  1
+                                                                           }
+                                                                       ]
+                                                                   ]
+                                                      },
+                        "Mesclar Praia e Lugares":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Ordenar e Limitar",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Ordenar e Limitar":  {
+                                                  "main":  [
+                                                               [
+                                                                   {
+                                                                       "node":  "Resolver URL da Foto",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   },
+                                                                   {
+                                                                       "node":  "Mesclar Lugar e URL",
+                                                                       "type":  "main",
+                                                                       "index":  0
+                                                                   }
+                                                               ]
+                                                           ]
+                                              },
+                        "Resolver URL da Foto":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Mesclar Lugar e URL",
+                                                                          "type":  "main",
+                                                                          "index":  1
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Mesclar Lugar e URL":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Combinar Metadados",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Combinar Metadados":  {
+                                                   "main":  [
+                                                                [
+                                                                    {
+                                                                        "node":  "Construir SQL",
+                                                                        "type":  "main",
+                                                                        "index":  0
+                                                                    }
+                                                                ]
+                                                            ]
+                                               },
+                        "Construir SQL":  {
+                                              "main":  [
+                                                           [
+                                                               {
+                                                                   "node":  "Inserir Pontos",
+                                                                   "type":  "main",
+                                                                   "index":  0
+                                                               }
+                                                           ]
+                                                       ]
+                                          }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1"
+                 },
+    "meta":  {
+                 "templateId":  "nearby-places"
+             }
 }

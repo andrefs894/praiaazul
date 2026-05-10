@@ -34,7 +34,7 @@ By type (Costeira/Fluvial/Albufeira), services (Lifeguard/Bar/Acessível/Restaur
 - Weather + water quality merged card
 - Lotação prevista (occupation indicator)
 - Services & equipment grid
-- **Nearby restaurants/bars/cafes** — top 5 within 500m, with photo, rating, walking distance
+- **Nearby restaurants/bars/cafes** — up to 5 per type (max 15) within 500m, with photo carousel, rating, walking distance; filter pills (Todos / Restaurante / Bar / Café)
 - Mini-map (Leaflet)
 - "Como chegar" → Google Maps directions
 

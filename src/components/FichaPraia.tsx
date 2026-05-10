@@ -134,7 +134,7 @@ export default function FichaPraia() {
   const ocupacao = estimarOcupacao(praia, meteo)
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 32 }}>
+    <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 90 }}>
       {/* Header */}
       <div style={{ maxWidth: 420, margin: '0 auto' }}>
         <div style={{

@@ -21,7 +21,7 @@ export function usePontosInteresse(praiaId: number | null | undefined) {
       .select('*')
       .eq('praia_id', praiaId)
       .order('rating', { ascending: false })
-      .limit(5)
+      .limit(15)
       .then(({ data }) => {
         if (cancelled) return
         setPontos((data as PontoInteresse[] | null) ?? [])

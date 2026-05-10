@@ -12,17 +12,16 @@
 - Profile (localStorage) feeds scoring
 - Favorites (localStorage)
 - Lotação prevista (heuristic indicator on Hoje + FichaPraia)
+- **Google OAuth login** — optional sync of favorites + profile via Supabase Auth
+- **County-aware Explorar search** — results grouped by concelho with header when query matches one
+- **Beach photo gallery** — `praia_fotos` table + `photos-google-places.json` workflow + `GaleriaFotos` component (carousel with arrows + dots)
+- **Nearby restaurants/bars/cafes** — `pontos_interesse` table + `nearby-places.json` workflow + `PontosInteresse` component (up to 5 per type, filter pills, photo carousel, surf school exclusion)
 
 ### Remaining before launch
-1. **Doc refresh** — `.claude/*.md` aligned with current code (in progress)
-2. **Google OAuth login** — optional sync of favorites + profile (moved up from Phase 2)
-3. **County-aware Explorar search** — group results by concelho when query matches one
-4. **Beach photo gallery** — `praia_fotos` table + `photos-google-places.json` workflow + `GaleriaFotos` component
-5. **Nearby restaurants/bars/cafes** — `pontos_interesse` table + `nearby-places.json` workflow + `PontosInteresse` component
-6. **Stitch AI design import** — apply across pages: Hoje → FichaPraia → Explorar → Favoritas → Perfil
-7. **Parking data** — manual entry for top ~50 beaches
-8. **Testing + polish** — test with 5–10 friends, mobile fixes
-9. **Vercel deploy** — soft launch, share on social media/forums
+1. **Stitch AI design import** — apply across pages: Hoje → FichaPraia → Explorar → Favoritas → Perfil
+2. **Parking data** — manual entry for top ~50 beaches
+3. **Testing + polish** — test with 5–10 friends, mobile fixes
+4. **Vercel deploy** — soft launch, share on social media/forums
 
 ## Phase 2 (do NOT implement now)
 - Parking crowdsourcing ("Did you find a spot?")

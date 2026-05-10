@@ -12,7 +12,7 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "SELECT id, google_place_id FROM praias WHERE google_place_id IS NOT NULL AND fotos_verificadas_em IS NULL ORDER BY id LIMIT 100"
+        "query": "SELECT id AS praia_id, google_place_id FROM praias WHERE google_place_id IS NOT NULL AND fotos_verificadas_em IS NULL ORDER BY id LIMIT 100"
       },
       "id": "node-postgres-praias",
       "name": "Buscar Praias Sem Fotos",
@@ -50,15 +50,26 @@
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
+        "mode": "combineByPosition",
+        "options": {}
+      },
+      "id": "node-merge1",
+      "name": "Mesclar Praia e Fotos",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Expand each beach into one item per photo reference (cap 10).\nconst praia = $('Buscar Praias Sem Fotos').item.json;\nconst response = $input.item.json;\n\n// Guard against null, error, or non-object API responses\nif (!response || typeof response !== 'object') {\n  console.log(`Praia ${praia.id}: unexpected response type, skipping`);\n  return [];\n}\nif (response.error) {\n  console.log(`Praia ${praia.id}: API error — ${response.error.message ?? JSON.stringify(response.error)}`);\n  return [];\n}\n\nconst photos = response.photos ?? [];\n\nif (photos.length === 0) {\n  console.log(`Praia ${praia.id}: no photos returned`);\n  return [];\n}\n\nconst out = photos.slice(0, 10).map((photo, idx) => ({\n  json: {\n    praia_id: Number(praia.id),\n    ordem: idx,\n    photoName: String(photo.name),\n    widthPx: photo.widthPx ?? null,\n    heightPx: photo.heightPx ?? null,\n    attribution: photo.authorAttributions?.[0]?.displayName ?? null,\n  }\n}));\n\nconsole.log(`Praia ${praia.id}: ${out.length} photos`);\nreturn out;"
+        "jsCode": "// runOnceForAllItems: process all merged beach+API items, expand into one item per photo.\n// runOnceForEachItem cannot return arrays in Code v2 — use this mode instead.\nconst out = [];\n\nfor (const inp of $input.all()) {\n  const item = inp.json;\n  const praia_id = item.praia_id;\n\n  if (item.error) {\n    console.log(`Praia ${praia_id}: API error — ${item.error.message ?? JSON.stringify(item.error)}`);\n    continue;\n  }\n\n  const photos = item.photos ?? [];\n\n  if (photos.length === 0) {\n    console.log(`Praia ${praia_id}: no photos returned`);\n    continue;\n  }\n\n  photos.slice(0, 10).forEach((photo, idx) => {\n    out.push({\n      json: {\n        praia_id: Number(praia_id),\n        ordem: idx,\n        photoName: String(photo.name),\n        widthPx: photo.widthPx ?? null,\n        heightPx: photo.heightPx ?? null,\n        attribution: photo.authorAttributions?.[0]?.displayName ?? null,\n      }\n    });\n  });\n\n  console.log(`Praia ${praia_id}: ${Math.min(photos.length, 10)} photos`);\n}\n\nconsole.log(`Total photo items to resolve: ${out.length}`);\nreturn out;"
       },
       "id": "node-code-expand",
       "name": "Expandir Fotos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [660, 300]
+      "position": [880, 300]
     },
     {
       "parameters": {
@@ -77,37 +88,54 @@
             { "name": "X-Goog-Api-Key", "value": "={{ $env.GOOGLE_MAPS_API_KEY }}" }
           ]
         },
-        "options": {}
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
       },
       "id": "node-http-photo-url",
       "name": "Resolver URL da Foto",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [880, 300]
+      "position": [1100, 300]
     },
     {
       "parameters": {
-        "mode": "runOnceForEachItem",
-        "language": "javaScript",
-        "jsCode": "// Pair the resolved photoUri with the metadata from the expand step.\nconst meta = $('Expandir Fotos').item.json;\nconst body = $input.item.json;\nconst photoUri = body.photoUri ?? null;\n\nif (!photoUri) {\n  console.log(`Praia ${meta.praia_id} ordem ${meta.ordem}: photoUri missing`);\n  return [];\n}\n\nreturn {\n  json: {\n    praia_id: meta.praia_id,\n    ordem: meta.ordem,\n    url: String(photoUri),\n    largura: meta.widthPx,\n    altura: meta.heightPx,\n    attribution: meta.attribution,\n  }\n};"
+        "mode": "combineByPosition",
+        "options": {}
       },
-      "id": "node-code-combine",
-      "name": "Combinar Metadados",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [1100, 300]
+      "id": "node-merge2",
+      "name": "Mesclar Metadados e URL",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1320, 300]
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// Build bulk SQL: replace photos for beaches that returned any, AND mark\n// every processed beach as verified (so beaches with zero photos don't get\n// re-fetched on the next run).\nconst rows = $input.all().map(i => i.json);\nconst allCandidates = $('Buscar Praias Sem Fotos').all().map(i => i.json);\nconst processedIds = [...new Set(allCandidates.map(c => Number(c.id)))];\n\nif (processedIds.length === 0) {\n  console.log('No beaches to verify');\n  return [];\n}\n\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst num = (v) => v == null ? 'NULL' : String(Number(v));\n\nlet sql = '';\n\nif (rows.length > 0) {\n  const praiaIdsWithFotos = [...new Set(rows.map(r => Number(r.praia_id)))];\n  const values = rows.map(r =>\n    `(${num(r.praia_id)}, ${esc(r.url)}, ${num(r.largura)}, ${num(r.altura)}, ${esc(r.attribution)}, ${num(r.ordem)}, 'google_places')`\n  ).join(',\\n');\n  sql += `DELETE FROM praia_fotos WHERE praia_id IN (${praiaIdsWithFotos.join(',')});\\n`;\n  sql += `INSERT INTO praia_fotos (praia_id, url, largura, altura, attribution, ordem, fonte) VALUES ${values};\\n`;\n}\n\n// Always mark processed beaches as verified, even if zero photos were found.\nsql += `UPDATE praias SET fotos_verificadas_em = NOW() WHERE id IN (${processedIds.join(',')});\\n`;\n\nconsole.log(`Will write ${rows.length} photos and mark ${processedIds.length} beaches as verified`);\nreturn [{ json: { sql, total: rows.length, praias: processedIds.length } }];"
+        "jsCode": "// Pair each resolved photoUri with the corresponding photo metadata (by position).\nconst out = [];\n\nfor (const inp of $input.all()) {\n  const item = inp.json;\n  const photoUri = item.photoUri ?? null;\n\n  if (!photoUri) {\n    console.log(`Praia ${item.praia_id} ordem ${item.ordem}: photoUri missing, skipping`);\n    continue;\n  }\n\n  out.push({\n    json: {\n      praia_id: item.praia_id,\n      ordem: item.ordem,\n      url: String(photoUri),\n      largura: item.widthPx,\n      altura: item.heightPx,\n      attribution: item.attribution,\n    }\n  });\n}\n\nreturn out;"
+      },
+      "id": "node-code-combine",
+      "name": "Combinar Metadados",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Build bulk SQL: replace photos for beaches that returned any, AND mark\n// every processed beach as verified (so beaches with zero photos don't get\n// re-fetched on the next run).\nconst rows = $input.all().map(i => i.json);\nconst allCandidates = $('Buscar Praias Sem Fotos').all().map(i => i.json);\nconst processedIds = [...new Set(allCandidates.map(c => Number(c.praia_id)))];\n\nif (processedIds.length === 0) {\n  console.log('No beaches to verify');\n  return [];\n}\n\nconst esc = (v) => v == null ? 'NULL' : `'${String(v).replace(/'/g, \"''\")}'`;\nconst num = (v) => v == null ? 'NULL' : String(Number(v));\n\nlet sql = '';\n\nif (rows.length > 0) {\n  const praiaIdsWithFotos = [...new Set(rows.map(r => Number(r.praia_id)))];\n  const values = rows.map(r =>\n    `(${num(r.praia_id)}, ${esc(r.url)}, ${num(r.largura)}, ${num(r.altura)}, ${esc(r.attribution)}, ${num(r.ordem)}, 'google_places')`\n  ).join(',\\n');\n  sql += `DELETE FROM praia_fotos WHERE praia_id IN (${praiaIdsWithFotos.join(',')});\\n`;\n  sql += `INSERT INTO praia_fotos (praia_id, url, largura, altura, attribution, ordem, fonte) VALUES ${values};\\n`;\n}\n\n// Always mark processed beaches as verified, even if zero photos were found.\nsql += `UPDATE praias SET fotos_verificadas_em = NOW() WHERE id IN (${processedIds.join(',')});\\n`;\n\nconsole.log(`Will write ${rows.length} photos and mark ${processedIds.length} beaches as verified`);\nreturn [{ json: { sql, total: rows.length, praias: processedIds.length } }];"
       },
       "id": "node-code-build-sql",
       "name": "Construir SQL",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1320, 300]
+      "position": [1760, 300]
     },
     {
       "parameters": {
@@ -118,7 +146,7 @@
       "name": "Inserir Fotos",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.5,
-      "position": [1540, 300],
+      "position": [1980, 300],
       "credentials": {
         "postgres": { "id": "1", "name": "Supabase Postgres" }
       }
@@ -127,10 +155,18 @@
   "pinData": {},
   "connections": {
     "Executar Uma Vez": { "main": [[{ "node": "Buscar Praias Sem Fotos", "type": "main", "index": 0 }]] },
-    "Buscar Praias Sem Fotos": { "main": [[{ "node": "Detalhes do Lugar", "type": "main", "index": 0 }]] },
-    "Detalhes do Lugar": { "main": [[{ "node": "Expandir Fotos", "type": "main", "index": 0 }]] },
-    "Expandir Fotos": { "main": [[{ "node": "Resolver URL da Foto", "type": "main", "index": 0 }]] },
-    "Resolver URL da Foto": { "main": [[{ "node": "Combinar Metadados", "type": "main", "index": 0 }]] },
+    "Buscar Praias Sem Fotos": { "main": [[
+      { "node": "Detalhes do Lugar", "type": "main", "index": 0 },
+      { "node": "Mesclar Praia e Fotos", "type": "main", "index": 0 }
+    ]] },
+    "Detalhes do Lugar": { "main": [[{ "node": "Mesclar Praia e Fotos", "type": "main", "index": 1 }]] },
+    "Mesclar Praia e Fotos": { "main": [[{ "node": "Expandir Fotos", "type": "main", "index": 0 }]] },
+    "Expandir Fotos": { "main": [[
+      { "node": "Resolver URL da Foto", "type": "main", "index": 0 },
+      { "node": "Mesclar Metadados e URL", "type": "main", "index": 0 }
+    ]] },
+    "Resolver URL da Foto": { "main": [[{ "node": "Mesclar Metadados e URL", "type": "main", "index": 1 }]] },
+    "Mesclar Metadados e URL": { "main": [[{ "node": "Combinar Metadados", "type": "main", "index": 0 }]] },
     "Combinar Metadados": { "main": [[{ "node": "Construir SQL", "type": "main", "index": 0 }]] },
     "Construir SQL": { "main": [[{ "node": "Inserir Fotos", "type": "main", "index": 0 }]] }
   },

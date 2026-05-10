@@ -47,8 +47,8 @@ export default function App() {
         <Route path="/explorar" element={<PaginaExplorar />} />
         <Route path="/favoritas" element={<PaginaFavoritas />} />
         <Route path="/perfil" element={<PaginaPerfil />} />
+        <Route path="/praia/:id" element={<FichaPraia />} />
       </Route>
-      <Route path="/praia/:id" element={<FichaPraia />} />
     </Routes>
   )
 }
