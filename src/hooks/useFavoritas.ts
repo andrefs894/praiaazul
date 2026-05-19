@@ -1,5 +1,5 @@
 // Dual-source favorites hook.
-// - Logged out: reads/writes localStorage (`praia_azul_favoritas`)
+// - Logged out: reads/writes localStorage (`mare_alta_favoritas`)
 // - Logged in:  reads/writes Supabase `user_favoritas`
 // On first sign-in, localStorage favorites are merged into Supabase
 // (union — we never delete a remote favorite during migration).
@@ -9,7 +9,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 
-const CHAVE = 'praia_azul_favoritas'
+const CHAVE = 'mare_alta_favoritas'
 
 function lerLocal(): number[] {
   try {

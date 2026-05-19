@@ -1,5 +1,9 @@
 import { Link, useLocation } from 'react-router-dom'
 
+const navy  = '#1E3A5F'
+const cream = '#F5EFE0'
+const dim   = 'rgba(245,239,224,0.40)'
+
 function IcSol({ cor }: { cor: string }) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={cor} strokeWidth="1.8" strokeLinecap="round">
@@ -57,8 +61,8 @@ export default function NavBar() {
   }
 
   function renderIcon(path: string, ativo: boolean) {
-    const cor = ativo ? '#1A6FB5' : '#7A8A9E'
-    if (path === '/') return <IcSol cor={cor} />
+    const cor = ativo ? cream : dim
+    if (path === '/')         return <IcSol cor={cor} />
     if (path === '/explorar') return <IcBussola cor={cor} />
     if (path === '/favoritas') return <IcEstrela cor={cor} preenchida={ativo} />
     return <IcPessoa cor={cor} />
@@ -67,11 +71,9 @@ export default function NavBar() {
   return (
     <nav style={{
       position: 'fixed',
-      bottom: 0,
-      left: 0,
-      right: 0,
-      background: '#0A1219',
-      borderTop: '0.5px solid #1A3D52',
+      bottom: 0, left: 0, right: 0,
+      background: navy,
+      borderTop: '1px solid rgba(245,239,224,0.10)',
       paddingBottom: 'calc(env(safe-area-inset-bottom) + 8px)',
       zIndex: 1000,
     }}>
@@ -87,15 +89,28 @@ export default function NavBar() {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: 3,
+                gap: 4,
                 paddingTop: 10,
                 paddingBottom: 8,
                 textDecoration: 'none',
-                color: ativo ? '#1A6FB5' : '#7A8A9E',
+                color: ativo ? cream : dim,
                 fontSize: 10,
-                transition: 'color 0.2s ease',
+                fontWeight: ativo ? 600 : 400,
+                letterSpacing: '0.5px',
+                position: 'relative',
               }}
             >
+              {/* Active indicator — small cream pill at the top */}
+              {ativo && (
+                <span style={{
+                  position: 'absolute',
+                  top: 0, left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 24, height: 2,
+                  borderRadius: 2,
+                  background: cream,
+                }} />
+              )}
               {renderIcon(path, ativo)}
               {label}
             </Link>

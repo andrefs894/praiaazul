@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Link, useOutletContext } from 'react-router-dom'
 import Mapa from '../components/Mapa'
+import { useSeletorNavegacao } from '../components/SeletorNavegacao'
 import { useAuth } from '../hooks/useAuth'
 import { useRecomendacao } from '../hooks/useRecomendacao'
 import { useFavoritas } from '../hooks/useFavoritas'
@@ -15,12 +16,17 @@ const C = {
   white: '#FFFFFF',
   creamText: '#F5EFE0',
   creamDim: 'rgba(245,239,224,0.65)',
+  creamFaint: 'rgba(245,239,224,0.45)',
   navyDim: 'rgba(30,58,95,0.55)',
   navySoft: 'rgba(30,58,95,0.08)',
   pillBorder: 'rgba(30,58,95,0.25)',
+  // Hero (on-navy) variants
+  cardOnNavy: 'rgba(245,239,224,0.08)',
+  cardBorderOnNavy: 'rgba(245,239,224,0.12)',
+  pillBorderOnNavy: 'rgba(245,239,224,0.28)',
+  ctaYellow: '#F4D58D',
 } as const
 
-const SERIF = '"Playfair Display", Georgia, serif'
 
 export default function PaginaHoje() {
   const { praiaComMeteo, loading, erro, coordenadas } = useOutletContext<ContextoApp>()
@@ -28,14 +34,12 @@ export default function PaginaHoje() {
   const { isFavorita, toggleFavorita } = useFavoritas()
   const { user } = useAuth()
   const radiusKm = perfil.distancia_maxima ?? 50
-  const [outrasAbertas, setOutrasAbertas] = useState(false)
 
   const avatarUrl = user?.user_metadata?.avatar_url as string | undefined
 
-  // Make iOS overscroll / page area outside the column show white
   useEffect(() => {
     const prev = document.documentElement.style.backgroundColor
-    document.documentElement.style.backgroundColor = '#FFFFFF'
+    document.documentElement.style.backgroundColor = C.navy
     return () => { document.documentElement.style.backgroundColor = prev }
   }, [])
 
@@ -52,28 +56,20 @@ export default function PaginaHoje() {
   const outrasOpcoes = recomendacoes.slice(1)
 
   return (
-    <div style={{ background: '#FFFFFF', minHeight: '100vh', paddingBottom: 90 }}>
-     <div style={{ maxWidth: 420, margin: '0 auto', background: C.cream, position: 'relative', minHeight: '100vh' }}>
+    <div style={{ background: C.navy, minHeight: '100vh' }}>
+     <div style={{ maxWidth: 420, margin: '0 auto', background: C.cream, position: 'relative', minHeight: '100vh', paddingBottom: 90 }}>
 
-      {/* HERO — navy with wave-shaped bottom */}
+      {/* HERO — navy, all primary recommendation content lives here.
+          The wave-shaped bottom transition is rendered AFTER the CTA buttons. */}
       <section style={{
         background: C.navy,
-        padding: '18px 20px 75px',
+        padding: '18px 20px 0',
         position: 'relative',
       }}>
-        {/* True wave (one full sine cycle): up-peak, then down-trough */}
-        <svg
-          aria-hidden
-          style={{ position: 'absolute', bottom: -1, left: 0, width: '100%', height: 65, display: 'block' }}
-          viewBox="0 0 420 65" preserveAspectRatio="none"
-        >
-          <path d="M0,30 Q105,0 210,30 T420,30 L420,65 L0,65 Z" fill={C.cream} />
-        </svg>
-
         {/* Brand bar */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'relative' }}>
           <p style={{ color: C.creamText, fontSize: 12, fontWeight: 600, letterSpacing: '2px', margin: 0 }}>
-            PRAIA AZUL
+            MARÉ ALTA
           </p>
           <Link to="/perfil" aria-label="Perfil" style={{ display: 'flex' }}>
             {avatarUrl ? (
@@ -88,111 +84,60 @@ export default function PaginaHoje() {
           </Link>
         </div>
 
-        <div style={{ position: 'relative' }}>
-          {topRec ? (
-            <Hero
-              rec={topRec}
-              isFavorita={isFavorita(topRec.praia.id)}
-              onToggleFavorita={() => toggleFavorita(topRec.praia.id)}
-            />
-          ) : (
-            <p style={{ color: C.creamDim, marginTop: 36, fontSize: 14 }}>
-              {loading ? 'A calcular a melhor praia para hoje…' : 'Sem praias no raio selecionado.'}
-            </p>
-          )}
+        {topRec ? (
+          <Hero
+            rec={topRec}
+            isFavorita={isFavorita(topRec.praia.id)}
+            onToggleFavorita={() => toggleFavorita(topRec.praia.id)}
+          />
+        ) : (
+          <p style={{ color: C.creamDim, margin: '36px 0 75px', fontSize: 14 }}>
+            {loading ? 'A calcular a melhor praia para hoje…' : 'Sem praias no raio selecionado.'}
+          </p>
+        )}
+
+        {/* Wave-shaped transition — rendered as the last element so it sits
+            below all hero content (name, weather, boxes, pills, buttons). */}
+        <div style={{ position: 'relative', height: 65, marginTop: 24 }}>
+          <svg
+            aria-hidden
+            style={{ position: 'absolute', bottom: -1, left: -20, width: 'calc(100% + 40px)', height: 65, display: 'block' }}
+            viewBox="0 0 420 65" preserveAspectRatio="none"
+          >
+            <path d="M0,30 Q105,0 210,30 T420,30 L420,65 L0,65 Z" fill={C.cream} />
+          </svg>
         </div>
       </section>
 
-      {/* BODY */}
+      {/* BODY — map + secondary options */}
       {topRec && (
         <section style={{
           padding: '24px 20px 0',
           display: 'flex', flexDirection: 'column', gap: 24,
         }}>
-
-          {/* 3 databoxes — wind / water quality / UV */}
-          <div style={{ display: 'flex', gap: 10 }}>
-            <DataBox
-              icone="💨"
-              value={topRec.praia.meteo?.vento_intensidade != null ? labelVento(topRec.praia.meteo.vento_intensidade) : '—'}
-              label="VENTO"
-            />
-            <DataBox
-              icone="💧"
-              value={labelQualidadeAgua(topRec.praia.qualidade_agua?.classificacao)}
-              label="ÁGUA"
-            />
-            <DataBox
-              icone="☀️"
-              value={labelUV(topRec.praia.meteo?.uv_index)}
-              label="UV"
+          {/* Map */}
+          <div style={{ borderRadius: 16, overflow: 'hidden' }}>
+            <Mapa
+              praias={praiaComMeteo}
+              recomendacoes={recomendacoes}
+              coordenadas={coordenadas}
+              radiusKm={radiusKm}
+              onRadiusChange={(km) => atualizar({ distancia_maxima: km as DistanciaMaxima })}
             />
           </div>
 
-          {/* Serviços */}
-          <Servicos praia={topRec.praia} />
-
-          {/* Map + Como chegar */}
-          <div style={{ position: 'relative' }}>
-            <div style={{ borderRadius: 16, overflow: 'hidden' }}>
-              <Mapa
-                praias={praiaComMeteo}
-                recomendacoes={recomendacoes}
-                coordenadas={coordenadas}
-                radiusKm={radiusKm}
-                onRadiusChange={(km) => atualizar({ distancia_maxima: km as DistanciaMaxima })}
-              />
-            </div>
-            {topRec.praia.latitude != null && topRec.praia.longitude != null && (
-              <a
-                href={`https://www.google.com/maps/dir/?api=1&destination=${topRec.praia.latitude},${topRec.praia.longitude}`}
-                target="_blank" rel="noopener noreferrer"
-                style={{
-                  position: 'absolute', bottom: 12, right: 12,
-                  background: C.navy, color: C.creamText,
-                  padding: '9px 18px', borderRadius: 22,
-                  fontSize: 13, fontWeight: 500,
-                  textDecoration: 'none',
-                  boxShadow: '0 4px 14px rgba(0,0,0,0.22)',
-                }}
-              >
-                Como chegar
-              </a>
-            )}
-          </div>
-
-          {/* Outras opções (collapsible) */}
+          {/* Outras opções */}
           {outrasOpcoes.length > 0 && (
             <section style={{ marginBottom: 8 }}>
-              <button
-                onClick={() => setOutrasAbertas(o => !o)}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                  width: '100%', background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                }}
-              >
-                <p style={{
-                  fontSize: 11, fontWeight: 600, color: C.navyDim,
-                  letterSpacing: '2.5px', textTransform: 'uppercase', margin: 0,
-                }}>
-                  Outras opções
-                </p>
-                <span style={{
-                  width: 32, height: 32, borderRadius: '50%',
-                  background: C.navy, color: C.creamText,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 14, lineHeight: 1,
-                  transform: outrasAbertas ? 'rotate(180deg)' : 'rotate(0)',
-                  transition: 'transform 0.2s',
-                }}>
-                  ↓
-                </span>
-              </button>
-              {outrasAbertas && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-                  {outrasOpcoes.map(rec => <CartaoSecundario key={rec.praia.id} rec={rec} />)}
-                </div>
-              )}
+              <p style={{
+                fontSize: 11, fontWeight: 600, color: C.navyDim,
+                letterSpacing: '2.5px', textTransform: 'uppercase', margin: '0 0 12px',
+              }}>
+                Outras opções
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {outrasOpcoes.map(rec => <CartaoSecundario key={rec.praia.id} rec={rec} />)}
+              </div>
             </section>
           )}
         </section>
@@ -215,11 +160,14 @@ function Hero({ rec, isFavorita, onToggleFavorita }: {
 }) {
   const { praia } = rec
   const m = praia.meteo
+  const { abrir: abrirNavegacao, sheet: sheetNavegacao } = useSeletorNavegacao()
 
   const localizacao = [
-    [praia.concelho, praia.distrito].filter(Boolean).join(', ') || null,
+    praia.concelho || praia.distrito || null,
     praia.distancia_minutos != null ? `~${praia.distancia_minutos} min` : null,
   ].filter(Boolean).join(' · ')
+
+  const temCoords = praia.latitude != null && praia.longitude != null
 
   return (
     <div style={{ marginTop: 26 }}>
@@ -230,22 +178,17 @@ function Hero({ rec, isFavorita, onToggleFavorita }: {
         A sua recomendação para hoje
       </p>
 
-      {/* Two columns: name+location on the left, weather on the right */}
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
-
-        {/* Left — name + location */}
+      {/* Name + location + favourite (circular outlined button) */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <Link to={`/praia/${praia.id}`} style={{ textDecoration: 'none' }}>
-            <h1 style={{
-              fontFamily: SERIF,
-              fontSize: 40, fontWeight: 500, lineHeight: 1.05,
-              color: C.creamText, margin: 0, letterSpacing: '-0.5px',
-            }}>
-              {praia.nome}
-            </h1>
-          </Link>
+          <h1 style={{
+            fontSize: 40, fontWeight: 500, lineHeight: 1.05,
+            color: C.creamText, margin: 0, letterSpacing: '-0.5px',
+          }}>
+            {praia.nome}
+          </h1>
           <p style={{
-            fontSize: 13, color: C.creamDim, margin: '14px 0 0',
+            fontSize: 13, color: C.creamDim, margin: '10px 0 0',
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -255,70 +198,168 @@ function Hero({ rec, isFavorita, onToggleFavorita }: {
             {localizacao}
           </p>
         </div>
-
-        {/* Right — favourite + weather + temp */}
-        <div style={{ flexShrink: 0, textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-          <button
-            onClick={onToggleFavorita}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}
-            aria-label="Favorita"
-          >
-            <IcCoracao preenchido={isFavorita} />
-          </button>
-
-          {m && (
-            <>
-              <span style={{ fontSize: 36, lineHeight: 1, marginTop: 2 }}>
-                {iconeEstadoTempo(m.estado_tempo, m.precipitacao)}
-              </span>
-              <p style={{
-                fontSize: 13, fontWeight: 500, color: C.creamText,
-                margin: '4px 0 0', lineHeight: 1.2, maxWidth: 130,
-              }}>
-                {m.estado_tempo ?? '—'}
-              </p>
-              {m.temp_max != null && (
-                <p style={{
-                  fontFamily: SERIF,
-                  fontSize: 30, fontWeight: 500, color: C.creamText,
-                  margin: '4px 0 0', lineHeight: 1, letterSpacing: '-1px',
-                }}>
-                  {Math.round(m.temp_max)}°
-                </p>
-              )}
-              {m.temp_min != null && (
-                <p style={{ fontSize: 10, color: C.creamDim, margin: '2px 0 0', letterSpacing: '0.5px' }}>
-                  mín {Math.round(m.temp_min)}°
-                </p>
-              )}
-            </>
-          )}
-        </div>
+        <button
+          onClick={onToggleFavorita}
+          style={{
+            background: 'transparent',
+            border: `1.5px solid ${C.pillBorderOnNavy}`,
+            borderRadius: '50%',
+            width: 40, height: 40,
+            cursor: 'pointer', padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0,
+          }}
+          aria-label="Favorita"
+        >
+          <IcCoracao preenchido={isFavorita} />
+        </button>
       </div>
+
+      {/* Weather: left column = big icon + status text, right column = temp */}
+      {m && (
+        <div style={{
+          display: 'flex', alignItems: 'stretch', gap: 0,
+          marginTop: 28,
+        }}>
+          {/* Left — icon stacked above status label, fills its half */}
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'flex-end', gap: 10,
+          }}>
+            <span style={{ display: 'flex', lineHeight: 1, color: C.creamText }} aria-hidden>
+              {iconeEstadoTempo(m.estado_tempo, m.precipitacao, 64)}
+            </span>
+            <p style={{
+              fontSize: 14, fontWeight: 400, color: C.creamDim,
+              margin: 0, lineHeight: 1.2, textAlign: 'center',
+            }}>
+              {m.estado_tempo ?? '—'}
+            </p>
+          </div>
+
+          {/* Divider */}
+          <div style={{ width: 1, background: 'rgba(245,239,224,0.18)', margin: '0 16px', flexShrink: 0 }} />
+
+          {/* Right — max temp + min temp, bottom-aligned */}
+          <div style={{
+            flex: 1, display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'flex-end', gap: 6,
+          }}>
+            {m.temp_max != null && (
+              <p style={{
+                fontSize: 64, fontWeight: 300, color: C.creamText,
+                margin: 0, lineHeight: 1, letterSpacing: '-2px',
+              }}>
+                {Math.round(m.temp_max)}°
+              </p>
+            )}
+            {m.temp_min != null && (
+              <p style={{
+                fontSize: 13, fontWeight: 400, color: C.creamDim,
+                margin: 0, lineHeight: 1,
+                fontFeatureSettings: '"tnum"',
+              }}>
+                mín {Math.round(m.temp_min)}°
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 3 databoxes — wind / water quality / UV */}
+      <div style={{ display: 'flex', gap: 10, marginTop: 22 }}>
+        <DataBox
+          icone={<IcWind />}
+          value={m?.vento_intensidade != null ? labelVento(m.vento_intensidade) : '—'}
+          label="VENTO"
+        />
+        <DataBox
+          icone={<IcDrop />}
+          value={labelQualidadeAgua(praia.qualidade_agua?.classificacao)}
+          label="ÁGUA"
+        />
+        <DataBox
+          icone={<IcSun />}
+          value={labelUV(m?.uv_index)}
+          label="UV"
+        />
+      </div>
+
+      {/* Service pills */}
+      <Servicos praia={praia} />
+
+      {/* CTA buttons */}
+      <div style={{ display: 'flex', gap: 10, marginTop: 18 }}>
+        <Link
+          to={`/praia/${praia.id}`}
+          style={{
+            flex: 1,
+            background: C.white,
+            color: C.navy,
+            padding: '13px 16px',
+            borderRadius: 26,
+            fontSize: 14, fontWeight: 600,
+            textDecoration: 'none',
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+          Ver detalhes
+        </Link>
+        {temCoords && (
+          <button
+            type="button"
+            onClick={() => abrirNavegacao(praia.latitude, praia.longitude, praia.nome)}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              color: C.creamText,
+              border: `1.5px solid ${C.pillBorderOnNavy}`,
+              padding: '11.5px 16px',
+              borderRadius: 26,
+              fontSize: 14, fontWeight: 500,
+              cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="3 11 22 2 13 21 11 13 3 11" />
+            </svg>
+            Como chegar
+          </button>
+        )}
+      </div>
+      {sheetNavegacao}
     </div>
   )
 }
 
-function DataBox({ icone, value, label }: { icone: string; value: string; label: string }) {
+function DataBox({ icone, value, label }: { icone: React.ReactNode; value: string; label: string }) {
   return (
     <div style={{
       flex: 1,
-      background: C.white,
+      background: C.cardOnNavy,
+      border: `1px solid ${C.cardBorderOnNavy}`,
       borderRadius: 16,
       padding: '14px 8px',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5,
-      boxShadow: '0 1px 3px rgba(30,58,95,0.06)',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
       minWidth: 0,
     }}>
-      <span style={{ fontSize: 22, lineHeight: 1 }}>{icone}</span>
+      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 22 }}>
+        {icone}
+      </span>
       <span style={{
-        fontSize: 14, fontWeight: 600, color: C.navy,
+        fontSize: 14, fontWeight: 500, color: C.creamText,
         lineHeight: 1.15, textAlign: 'center',
         maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis',
       }}>
         {value}
       </span>
-      <span style={{ fontSize: 9.5, fontWeight: 600, color: C.navyDim, letterSpacing: '2px' }}>
+      <span style={{ fontSize: 9.5, fontWeight: 600, color: C.creamFaint, letterSpacing: '2px' }}>
         {label}
       </span>
     </div>
@@ -326,43 +367,35 @@ function DataBox({ icone, value, label }: { icone: string; value: string; label:
 }
 
 function Servicos({ praia }: { praia: RecomendacaoResult['praia'] }) {
-  const servicos: { icone: string; texto: string }[] = []
-  if (praia.bandeira_azul)                  servicos.push({ icone: '🏖️', texto: 'Bandeira Azul' })
-  if (praia.nadador_salvador)               servicos.push({ icone: '🛟', texto: 'Nadador-Salvador' })
-  if (praia.acessivel)                      servicos.push({ icone: '♿', texto: 'Acessível' })
-  if (praia.estacionamento === 'gratuito')  servicos.push({ icone: '🅿️', texto: 'Estac. grátis' })
-  else if (praia.estacionamento === 'pago') servicos.push({ icone: '🅿️', texto: 'Estac. pago' })
-  if (praia.restaurante)                    servicos.push({ icone: '🍽️', texto: 'Restaurante' })
+  const servicos: { icone: React.ReactNode; texto: string }[] = []
+  if (praia.bandeira_azul)                  servicos.push({ icone: <IcFlag />,    texto: 'Bandeira Azul' })
+  if (praia.nadador_salvador)               servicos.push({ icone: <IcLife />,    texto: 'Nadador-Salvador' })
+  if (praia.acessivel)                      servicos.push({ icone: <IcAccess />,  texto: 'Acessível' })
+  if (praia.estacionamento === 'gratuito')  servicos.push({ icone: <IcParking color="#5BC8F7" />, texto: 'Estac. grátis' })
+  else if (praia.estacionamento === 'pago') servicos.push({ icone: <IcParking color="#5BC8F7" />, texto: 'Estac. pago' })
+  if (praia.restaurante)                    servicos.push({ icone: <IcFork />,    texto: 'Restaurante' })
 
   if (servicos.length === 0) return null
 
   return (
-    <div>
-      <p style={{
-        fontSize: 11, fontWeight: 600, color: C.navyDim,
-        letterSpacing: '2.5px', textTransform: 'uppercase', margin: '0 0 12px',
-      }}>
-        Serviços
-      </p>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {servicos.map((s, i) => <Pill key={s.texto} icone={s.icone} texto={s.texto} filled={i === 0} />)}
-      </div>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
+      {servicos.map(s => <Pill key={s.texto} icone={s.icone} texto={s.texto} />)}
     </div>
   )
 }
 
-function Pill({ icone, texto, filled }: { icone: string; texto: string; filled?: boolean }) {
+function Pill({ icone, texto }: { icone: React.ReactNode; texto: string }) {
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 6,
       padding: '6px 12px',
       borderRadius: 20,
-      border: `1px solid ${C.pillBorder}`,
-      background: filled ? C.navySoft : 'transparent',
-      color: C.navy,
+      border: `1px solid ${C.pillBorderOnNavy}`,
+      background: 'transparent',
+      color: C.creamText,
       fontSize: 12, fontWeight: 500,
     }}>
-      <span style={{ fontSize: 13, lineHeight: 1 }}>{icone}</span>
+      <span style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 1 }}>{icone}</span>
       {texto}
     </span>
   )
@@ -370,7 +403,7 @@ function Pill({ icone, texto, filled }: { icone: string; texto: string; filled?:
 
 function IcCoracao({ preenchido }: { preenchido: boolean }) {
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24"
+    <svg width="18" height="18" viewBox="0 0 24 24"
       fill={preenchido ? C.creamText : 'none'}
       stroke={C.creamText} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
@@ -378,9 +411,96 @@ function IcCoracao({ preenchido }: { preenchido: boolean }) {
   )
 }
 
+// ── Line icons for the on-navy data boxes ──────────────────────────────
+function IcWind() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+      stroke={C.creamText} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 8h11a3 3 0 1 0-3-3" />
+      <path d="M3 12h16a3 3 0 1 1-3 3" />
+      <path d="M3 16h9" />
+    </svg>
+  )
+}
+function IcDrop() {
+  return (
+    <svg width="20" height="22" viewBox="0 0 24 24" fill="none"
+      stroke={C.creamText} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2.5s7 7.5 7 12a7 7 0 1 1-14 0c0-4.5 7-12 7-12z" />
+    </svg>
+  )
+}
+function IcSun() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="#F5C24D"
+      stroke="#F5C24D" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="4" />
+      <line x1="12" y1="2" x2="12" y2="4" />
+      <line x1="12" y1="20" x2="12" y2="22" />
+      <line x1="2" y1="12" x2="4" y2="12" />
+      <line x1="20" y1="12" x2="22" y2="12" />
+      <line x1="4.93" y1="4.93" x2="6.34" y2="6.34" />
+      <line x1="17.66" y1="17.66" x2="19.07" y2="19.07" />
+      <line x1="4.93" y1="19.07" x2="6.34" y2="17.66" />
+      <line x1="17.66" y1="6.34" x2="19.07" y2="4.93" />
+    </svg>
+  )
+}
+
+// ── Service-pill icons (colored, like the screenshot) ──────────────────
+function IcFlag() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="#3B82F6" stroke="#3B82F6" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 22V4a1 1 0 0 1 1-1h13l-2 5 2 5H6v9" />
+    </svg>
+  )
+}
+function IcLife() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E05252" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="3.5" fill="#E05252" />
+      <line x1="5.5" y1="5.5" x2="9.5" y2="9.5" />
+      <line x1="14.5" y1="14.5" x2="18.5" y2="18.5" />
+      <line x1="18.5" y1="5.5" x2="14.5" y2="9.5" />
+      <line x1="9.5" y1="14.5" x2="5.5" y2="18.5" />
+    </svg>
+  )
+}
+function IcAccess() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="#3B82F6" stroke="#3B82F6" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <circle cx="12" cy="5.5" r="1.4" fill="#fff" stroke="#fff" />
+      <path d="M9 9.5h6M11 9.5v4l-2 4M13 13.5h2.5l1.5 4" stroke="#fff" strokeWidth="1.4" fill="none" />
+    </svg>
+  )
+}
+function IcParking({ color }: { color: string }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="3" />
+      <path d="M10 17V8h3.2a2.8 2.8 0 0 1 0 5.6H10" stroke="#fff" fill="none" strokeWidth="1.8" />
+    </svg>
+  )
+}
+function IcFork() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#E89B3C" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7 2v8a2 2 0 0 0 4 0V2M9 10v12" />
+      <path d="M16 2c-1.5 0-3 2-3 5s1.5 5 3 5v10" />
+    </svg>
+  )
+}
+
 function CartaoSecundario({ rec }: { rec: RecomendacaoResult }) {
-  const { praia, motivo } = rec
+  const { praia } = rec
   const m = praia.meteo
+  const subtitulo = [
+    praia.concelho,
+    m?.temp_max != null ? `${Math.round(m.temp_max)}°C` : null,
+    praia.distancia_minutos != null ? `~${praia.distancia_minutos} min` : null,
+  ].filter(Boolean).join(' · ')
   return (
     <Link to={`/praia/${praia.id}`} style={{ textDecoration: 'none', display: 'block' }}>
       <div style={{
@@ -393,9 +513,9 @@ function CartaoSecundario({ rec }: { rec: RecomendacaoResult }) {
         <div style={{
           width: 40, height: 40, background: C.navySoft, borderRadius: 10,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 20, flexShrink: 0,
+          color: C.navy, flexShrink: 0,
         }}>
-          {iconeEstadoTempo(m?.estado_tempo, m?.precipitacao)}
+          {iconeEstadoTempo(m?.estado_tempo, m?.precipitacao, 20)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{
@@ -404,18 +524,23 @@ function CartaoSecundario({ rec }: { rec: RecomendacaoResult }) {
           }}>
             {praia.nome}
           </p>
-          <p style={{
-            fontSize: 12, color: C.navyDim, margin: '3px 0 0',
-            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {[praia.concelho, motivo].filter(Boolean).join(' · ')}
-          </p>
+          {subtitulo && (
+            <p style={{
+              fontSize: 12, color: C.navyDim, margin: '3px 0 0',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>
+              {subtitulo}
+            </p>
+          )}
         </div>
-        {praia.distancia_minutos != null && (
-          <span style={{ fontSize: 13, color: C.navy, fontWeight: 600, flexShrink: 0 }}>
-            ~{praia.distancia_minutos} min
-          </span>
-        )}
+        <svg
+          width="18" height="18" viewBox="0 0 24 24" fill="none"
+          stroke={C.navyDim} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          style={{ flexShrink: 0 }}
+          aria-hidden
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
       </div>
     </Link>
   )

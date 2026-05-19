@@ -2,10 +2,12 @@ import { useState, useEffect } from 'react'
 import type { PontoInteresse } from '../types'
 
 const C = {
-  card: '#1A3D52',
-  text: '#E8EDF2',
-  text2: '#7A8A9E',
-  accent: '#1A6FB5',
+  navy: '#1E3A5F',
+  white: '#FFFFFF',
+  navyDim: 'rgba(30,58,95,0.55)',
+  navySoft: 'rgba(30,58,95,0.08)',
+  pillBorder: 'rgba(30,58,95,0.25)',
+  cream: '#EDE3CD',
 } as const
 
 const FOTO_ALTURA = 160
@@ -51,9 +53,9 @@ export default function PontosInteresse({ pontos }: Props) {
     <div>
       {/* Section label */}
       <p style={{
-        fontSize: 10, fontWeight: 500, color: C.text2,
-        letterSpacing: '2px', textTransform: 'uppercase',
-        margin: '0 0 10px',
+        fontSize: 11, fontWeight: 600, color: C.navyDim,
+        letterSpacing: '2.5px', textTransform: 'uppercase',
+        margin: '0 0 12px',
       }}>
         Por perto
       </p>
@@ -73,8 +75,11 @@ export default function PontosInteresse({ pontos }: Props) {
 
       {/* Empty filtered state */}
       {visiveis.length === 0 && (
-        <div style={{ background: C.card, borderRadius: 12, padding: '20px 14px', textAlign: 'center' }}>
-          <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>
+        <div style={{
+          background: C.white, borderRadius: 12, padding: '20px 14px',
+          textAlign: 'center', boxShadow: '0 1px 3px rgba(30,58,95,0.06)',
+        }}>
+          <p style={{ fontSize: 13, color: C.navyDim, margin: 0 }}>
             Sem {filtro ? tipoLabel(filtro).toLowerCase() + 's' : 'locais'} por perto.
           </p>
         </div>
@@ -89,15 +94,16 @@ export default function PontosInteresse({ pontos }: Props) {
           style={{
             display: 'flex',
             flexDirection: 'column',
-            background: C.card,
-            borderRadius: 12,
+            background: C.white,
+            borderRadius: 16,
             overflow: 'hidden',
             textDecoration: 'none',
-            color: C.text,
+            color: C.navy,
+            boxShadow: '0 1px 3px rgba(30,58,95,0.06)',
           }}
         >
           {/* Photo with navigation arrows + dots */}
-          <div style={{ position: 'relative', width: '100%', height: FOTO_ALTURA, background: '#0F1923', flexShrink: 0 }}>
+          <div style={{ position: 'relative', width: '100%', height: FOTO_ALTURA, background: C.navySoft, flexShrink: 0 }}>
             {p.foto_url ? (
               <img
                 src={p.foto_url}
@@ -142,7 +148,7 @@ export default function PontosInteresse({ pontos }: Props) {
                         width: i === idx ? 16 : 6,
                         height: 6,
                         borderRadius: 3,
-                        background: i === idx ? 'white' : 'rgba(255,255,255,0.4)',
+                        background: i === idx ? 'white' : 'rgba(255,255,255,0.5)',
                         transition: 'width 0.2s',
                         cursor: 'pointer',
                       }}
@@ -154,9 +160,9 @@ export default function PontosInteresse({ pontos }: Props) {
           </div>
 
           {/* Text */}
-          <div style={{ padding: '12px 14px' }}>
-            <p style={{ fontSize: 14, fontWeight: 500, color: C.text, margin: 0 }}>{p.nome}</p>
-            <p style={{ fontSize: 12, color: C.text2, margin: '5px 0 0' }}>
+          <div style={{ padding: '14px 16px' }}>
+            <p style={{ fontSize: 14, fontWeight: 500, color: C.navy, margin: 0 }}>{p.nome}</p>
+            <p style={{ fontSize: 12, color: C.navyDim, margin: '5px 0 0' }}>
               {[
                 p.rating != null ? `⭐ ${p.rating.toFixed(1)}` : null,
                 p.distancia_metros != null ? `~${p.distancia_metros}m` : null,
@@ -164,7 +170,7 @@ export default function PontosInteresse({ pontos }: Props) {
               ].filter(Boolean).join(' · ')}
             </p>
             {p.endereco && (
-              <p style={{ fontSize: 11, color: C.text2, margin: '4px 0 0', opacity: 0.7 }}>{p.endereco}</p>
+              <p style={{ fontSize: 11, color: C.navyDim, margin: '4px 0 0', opacity: 0.75 }}>{p.endereco}</p>
             )}
           </div>
         </a>
@@ -196,12 +202,14 @@ function estiloSeta(lado: 'left' | 'right') {
 
 function estiloPilula(ativo: boolean) {
   return {
-    background: ativo ? C.accent : 'transparent',
-    border: `0.5px solid ${ativo ? C.accent : 'rgba(122,138,158,0.4)'}`,
-    color: ativo ? 'white' : C.text2,
+    background: ativo ? C.navy : 'transparent',
+    border: `1px solid ${ativo ? C.navy : C.pillBorder}`,
+    color: ativo ? C.cream : C.navy,
     fontSize: 12,
-    padding: '5px 12px',
+    fontWeight: 500,
+    padding: '6px 12px',
     borderRadius: 20,
     cursor: 'pointer',
+    transition: 'all 0.18s ease',
   }
 }

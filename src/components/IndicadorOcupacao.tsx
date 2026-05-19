@@ -5,7 +5,7 @@
 //   - "card":    full-width block — used as a section in FichaPraia.
 
 import { categorizar, rotuloOcupacao, corOcupacao } from '../lib/ocupacao'
-import type { FonteOcupacao } from '../lib/ocupacao'
+import type { FonteOcupacao, CategoriaOcupacao } from '../lib/ocupacao'
 
 interface Props {
   nivel: number | null | undefined
@@ -26,28 +26,29 @@ export default function IndicadorOcupacao({ nivel, fonte, variant = 'compact' }:
   if (variant === 'card') {
     return (
       <div style={{
-        background: '#132A3A',
-        borderRadius: 12,
-        padding: 16,
+        background: '#FFFFFF',
+        borderRadius: 16,
+        padding: 18,
+        boxShadow: '0 1px 3px rgba(30,58,95,0.06)',
       }}>
         <p style={{
-          fontSize: 10, fontWeight: 500, color: '#7A8A9E',
-          letterSpacing: '2px', textTransform: 'uppercase',
-          margin: '0 0 12px',
+          fontSize: 11, fontWeight: 600, color: 'rgba(30,58,95,0.55)',
+          letterSpacing: '2.5px', textTransform: 'uppercase',
+          margin: '0 0 14px',
         }}>
           Lotação prevista
         </p>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-          <span style={{ fontSize: 22 }}>👥</span>
-          <span style={{ fontSize: 18, fontWeight: 500, color: cor.fg, flex: 1 }}>{rotulo}</span>
-          <span style={{ fontSize: 12, color: '#7A8A9E' }}>{nivel}/100</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <IconePessoas categoria={categoria} size={28} color={cor.bar} />
+          <span style={{ fontSize: 18, fontWeight: 600, color: cor.bar, flex: 1 }}>{rotulo}</span>
+          <span style={{ fontSize: 12, color: 'rgba(30,58,95,0.55)' }}>{nivel}%</span>
         </div>
 
         {/* Progress bar */}
         <div style={{
           height: 6, borderRadius: 3,
-          background: 'rgba(255,255,255,0.08)',
+          background: 'rgba(30,58,95,0.08)',
           overflow: 'hidden',
         }}>
           <div style={{
@@ -58,7 +59,7 @@ export default function IndicadorOcupacao({ nivel, fonte, variant = 'compact' }:
           }} />
         </div>
 
-        <p style={{ fontSize: 11, color: '#7A8A9E', margin: '12px 0 0', lineHeight: 1.5 }}>
+        <p style={{ fontSize: 11, color: 'rgba(30,58,95,0.55)', margin: '14px 0 0', lineHeight: 1.5 }}>
           {isEstimate
             ? 'Estimativa baseada na popularidade da praia, hora do dia, dia da semana e meteorologia. Não é uma medição em tempo real.'
             : 'Dados em tempo real.'}
@@ -77,7 +78,7 @@ export default function IndicadorOcupacao({ nivel, fonte, variant = 'compact' }:
       borderRadius: 10,
       padding: '10px 14px',
     }}>
-      <span style={{ fontSize: 18, flexShrink: 0 }}>👥</span>
+      <IconePessoas categoria={categoria} size={22} color={cor.fg} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: cor.fg }}>{rotulo}</span>
@@ -113,5 +114,66 @@ export default function IndicadorOcupacao({ nivel, fonte, variant = 'compact' }:
         </div>
       </div>
     </div>
+  )
+}
+
+// Filled-silhouette people icon. Number of figures scales with the category:
+//   baixa → 1, moderada → 2, alta → 3, muito_alta → 4
+function IconePessoas({ categoria, size, color }: { categoria: CategoriaOcupacao; size: number; color: string }) {
+  const common = {
+    width: size, height: size, viewBox: '0 0 24 24', fill: color,
+    style: { flexShrink: 0 } as React.CSSProperties,
+    'aria-hidden': true,
+  }
+
+  if (categoria === 'baixa') {
+    return (
+      <svg {...common}>
+        <circle cx="12" cy="8" r="4" />
+        <path d="M4 21v-1a8 8 0 0 1 16 0v1z" />
+      </svg>
+    )
+  }
+
+  if (categoria === 'moderada') {
+    return (
+      <svg {...common}>
+        <circle cx="8" cy="9" r="3.2" />
+        <circle cx="16" cy="9" r="3.2" />
+        <path d="M1 21v-1a6 6 0 0 1 12 0v1z" />
+        <path d="M11 21v-1a6 6 0 0 1 12 0v1z" />
+      </svg>
+    )
+  }
+
+  if (categoria === 'alta') {
+    return (
+      <svg {...common}>
+        {/* Back two */}
+        <circle cx="6" cy="8" r="2.6" />
+        <circle cx="18" cy="8" r="2.6" />
+        <path d="M0 19v-1a5 5 0 0 1 10 0v1z" />
+        <path d="M14 19v-1a5 5 0 0 1 10 0v1z" />
+        {/* Front center */}
+        <circle cx="12" cy="11" r="3.4" />
+        <path d="M5 22v-1a7 7 0 0 1 14 0v1z" />
+      </svg>
+    )
+  }
+
+  // muito_alta
+  return (
+    <svg {...common}>
+      {/* Back row */}
+      <circle cx="5" cy="8" r="2.4" />
+      <circle cx="12" cy="6.5" r="2.4" />
+      <circle cx="19" cy="8" r="2.4" />
+      <path d="M-1 19v-1a5 5 0 0 1 10 0v1z" />
+      <path d="M7 18v-1a5 5 0 0 1 10 0v1z" />
+      <path d="M15 19v-1a5 5 0 0 1 10 0v1z" />
+      {/* Front center */}
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M5.5 22v-1a6.5 6.5 0 0 1 13 0v1z" />
+    </svg>
   )
 }

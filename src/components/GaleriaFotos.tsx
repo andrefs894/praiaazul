@@ -12,7 +12,7 @@ export default function GaleriaFotos({ fotos }: Props) {
   const foto = fotos[idx]
 
   return (
-    <div style={{ position: 'relative', borderRadius: 12, overflow: 'hidden', aspectRatio: '4 / 3', background: '#1A3D52' }}>
+    <div style={{ position: 'relative', overflow: 'hidden', aspectRatio: '4 / 3', background: 'rgba(30,58,95,0.08)' }}>
       <img
         src={foto.url}
         alt=""

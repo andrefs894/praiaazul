@@ -88,7 +88,7 @@ function CartaoPrincipal({
       {/* Weather state row: icon + state text + separator + temp max/min */}
       {m && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, background: 'rgba(255,255,255,0.08)', borderRadius: 10, padding: '10px 14px' }}>
-          <span style={{ fontSize: 28, flexShrink: 0 }}>{iconeEstadoTempo(m.estado_tempo, m.precipitacao)}</span>
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0 }}>{iconeEstadoTempo(m.estado_tempo, m.precipitacao, 28)}</span>
           <span style={{ fontSize: 14, color: 'rgba(255,255,255,0.85)', flex: 1, lineHeight: 1.2 }}>{m.estado_tempo ?? '—'}</span>
           {(m.temp_max != null || m.temp_min != null) && (
             <>
@@ -182,10 +182,10 @@ export function CartaoSecundario({ rec }: { rec: RecomendacaoResult }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 20,
+          color: '#E8EDF2',
           flexShrink: 0,
         }}>
-          {iconeEstadoTempo(m?.estado_tempo, m?.precipitacao)}
+          {iconeEstadoTempo(m?.estado_tempo, m?.precipitacao, 20)}
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ fontSize: 15, fontWeight: 500, color: '#E8EDF2', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

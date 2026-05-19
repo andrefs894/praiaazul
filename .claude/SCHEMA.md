@@ -139,7 +139,7 @@ CREATE POLICY "owner write" ON user_profiles FOR ALL    USING (auth.uid() = user
 ```
 
 ## user_favoritas (synced favorites, after Google login)
-Pre-login favorites live in localStorage as `praia_azul_favoritas` (number[]). On login, they are migrated here (union with any existing remote rows).
+Pre-login favorites live in localStorage as `mare_alta_favoritas` (number[]). On login, they are migrated here (union with any existing remote rows).
 
 ```sql
 CREATE TABLE user_favoritas (

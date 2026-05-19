@@ -1,4 +1,4 @@
-// Types for the Praia Azul domain model
+// Types for the Maré Alta domain model
 
 export interface Praia {
   id: number

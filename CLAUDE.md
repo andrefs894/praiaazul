@@ -1,4 +1,4 @@
-# CLAUDE.md — Praia Azul
+# CLAUDE.md — Maré Alta
 
 ## Project
 Portuguese PWA — "What's the best beach for me, today?" in 3 seconds.

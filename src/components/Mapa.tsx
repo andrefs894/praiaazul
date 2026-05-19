@@ -75,10 +75,10 @@ export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onR
         minZoom={6}
         maxBounds={PORTUGAL_BOUNDS}
         maxBoundsViscosity={1.0}
+        attributionControl={false}
         style={{ height: '100%', width: '100%' }}
       >
         <TileLayer
-          attribution='&copy; <a href="https://www.esri.com/">Esri</a> &mdash; Source: Esri, Maxar, Earthstar Geographics'
           url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
         />
 
@@ -134,8 +134,9 @@ export default function Mapa({ praias, recomendacoes, coordenadas, radiusKm, onR
                 <strong style={{ display: 'block', marginBottom: 2 }}>{p.nome}</strong>
                 {p.concelho && <span style={{ fontSize: 11, color: '#666' }}>{p.concelho}</span>}
                 {p.meteo?.temp_max != null && (
-                  <span style={{ display: 'block', fontSize: 11, color: '#444', marginTop: 2 }}>
-                    {iconeEstadoTempo(p.meteo.estado_tempo, p.meteo.precipitacao)} {p.meteo.temp_max}°C
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#444', marginTop: 2 }}>
+                    <span style={{ color: '#1E3A5F' }}>{iconeEstadoTempo(p.meteo.estado_tempo, p.meteo.precipitacao, 14)}</span>
+                    {p.meteo.temp_max}°C
                   </span>
                 )}
               </Link>

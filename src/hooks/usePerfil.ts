@@ -1,5 +1,5 @@
 // Dual-source profile hook.
-// - Logged out: reads/writes localStorage (`praia_azul_perfil`)
+// - Logged out: reads/writes localStorage (`mare_alta_perfil`)
 // - Logged in:  reads/writes Supabase `user_profiles`
 // On first sign-in, the localStorage profile is migrated into Supabase
 // (only if no remote row exists yet — never overwrites cloud data).
@@ -9,7 +9,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from './useAuth'
 import type { PerfilUtilizador } from '../types'
 
-const CHAVE = 'praia_azul_perfil'
+const CHAVE = 'mare_alta_perfil'
 const PADRAO: PerfilUtilizador = {
   tipo: 'familia',
   localizacao: null,

@@ -32,7 +32,7 @@ function Layout() {
   }
 
   return (
-    <div style={{ background: '#0F1923', minHeight: '100vh' }}>
+    <div style={{ background: '#1E3A5F', minHeight: '100vh' }}>
       <Outlet context={ctx} />
       <NavBar />
     </div>
